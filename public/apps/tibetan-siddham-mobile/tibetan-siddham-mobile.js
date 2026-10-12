@@ -137,7 +137,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     saveDraftSoon();
   }
 
-  /* ---------- 記號列（母音 → 子音 → 元音符號 → 下加輔音 → 標點） ----------
+  /* ---------- 記號列（母音 → 子音 → 下加輔音 → 元音符號 → 標點） ----------
    * 鍵由 data/assist.json 推出（tibetan-siddham 輔助輸入面板那一份的複製件；每一格的記法與藏文字形都在資料裡）。
    * 讀不到就在記號列上講出來——空著的記號列與「這支 app 沒有這個功能」長得一樣。 */
   function getJson(url) {

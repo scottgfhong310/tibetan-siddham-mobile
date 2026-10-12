@@ -430,7 +430,7 @@ code {
 /* 0,2,1：贏過 Materialize 對 a 的預設色 */
 .in-bar .in-clear:hover { color: var(--danger); background: var(--surface-2); }
 
-/* 記號列切換（母音 → 子音 → 元音符號 → 下加輔音 → 標點）：鈕上的字＝記號列現在是哪一組。
+/* 記號列切換（母音 → 子音 → 下加輔音 → 元音符號 → 標點）：鈕上的字＝記號列現在是哪一組。
  * 裸 <button> ⇒ Materialize 的 teal 互動底要自己蓋掉（§5.1 gotcha），三態都給。 */
 .in-bar .keyset-toggle {
   flex: none;

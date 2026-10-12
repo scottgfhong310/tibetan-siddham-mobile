@@ -82,7 +82,7 @@
     </section>
 
     <!-- 記號列：鍵由 tibetan-siddham-mobile.js 依 data/assist.json 產生（TibetanSiddhamMobileLib.keysFromAssist），
-         母音／子音／元音符號／下加輔音／標點五組；鍵上畫藏文字形、底下印記法。
+         母音／子音／下加輔音／元音符號／標點五組；鍵上畫藏文字形、底下印記法。
          ⚠️ 按鍵不可以讓輸入框失焦——失焦鍵盤就收起來了（見 bindKeybar）。 -->
     <div id="keybar" class="keybar" role="toolbar" data-i18n-title="keybar.label" title="記號"></div>
 
@@ -93,9 +93,9 @@
       <a href="#!" id="clear-input" class="in-clear" data-i18n-title="tool.clear" title="清除輸入">
         <i class="material-icons">clear</i>
       </a>
-      <!-- 記號列切換：母音 → 子音 → 元音符號 → 下加輔音 → 標點（循環）。鈕上的字＝記號列「現在」是哪一組（文字由 tibetan-siddham-mobile.js 依狀態填） -->
+      <!-- 記號列切換：母音 → 子音 → 下加輔音 → 元音符號 → 標點（循環）。鈕上的字＝記號列「現在」是哪一組（文字由 tibetan-siddham-mobile.js 依狀態填） -->
       <button type="button" id="keyset-toggle" class="keyset-toggle"
-        data-i18n-title="tool.keyset" title="切換記號列：母音／子音／元音符號／下加輔音／標點" aria-live="polite"></button>
+        data-i18n-title="tool.keyset" title="切換記號列：母音／子音／下加輔音／元音符號／標點" aria-live="polite"></button>
     </div>
   </div>
 

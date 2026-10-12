@@ -406,16 +406,20 @@ check('㉓ 複製鈕在欄位底部', (w) => {
   return bad.length ? 'FAIL: ' + bad.join('、') + ' 的複製鈕不在捲動框之後的 .out-foot 裡' : true;
 });
 
-// ㉔ 記號列五組：母音 → 子音 → 元音符號 → 下加輔音 → 標點——就是 data/assist.json 的類別、同一個順序（＝tibetan-siddham 輔助輸入面板的順序）。
-//    lib 寫死的只有「收哪幾類、依什麼順序」；assist.json 多一類或換了順序而這裡沒跟上，這一條會紅。
+// ㉔ 記號列五組的順序：母音 → 子音 → 下加輔音 → 元音符號 → 標點〔owner 2026-10-12 指定：「將下加輔音的位置放到元音的前面（兩個位置對調）」；
+//    在那之前照 data/assist.json 的類別順序，元音符號在下加輔音前面〕。切換鈕依 KEYSET_IDS 的順序循環、預設是第一組 ⇒ 順序本身就是規格。
+//    ⚠️ 順序不再等於資料的順序（桌機版面板仍是 元音符號 → 下加輔音）；**類別的集合**仍要與 assist.json 相同——那邊多一類或少一類而這裡沒跟上，這一條會紅。
 //    每一組的鍵數＝資料那一類的格數（不去重、不漏）；總數 108 是上游文件寫的數字（期望值不取自 lib）。
-check('㉔ 記號列五組依序：母音 → 子音 → 元音符號 → 下加輔音 → 標點（＝assist.json 的類別）', (w) => {
+check('㉔ 記號列五組依序：母音 → 子音 → 下加輔音 → 元音符號 → 標點（類別＝assist.json 的五類）', (w) => {
   const ids = w.Lib.KEYSET_IDS.join(',');
-  if (ids !== 'vowel,consonant,vowel_sign,subjoined,punct') return 'FAIL: KEYSET_IDS = ' + ids;
-  const cats = (w.assist.categories || []).map((c) => c.id).join(',');
-  if (cats !== ids) return 'FAIL: assist.json 的類別是 ' + cats;
+  if (ids !== 'vowel,consonant,subjoined,vowel_sign,punct') return 'FAIL: KEYSET_IDS = ' + ids;
+  const cats = (w.assist.categories || []).map((c) => c.id).sort().join(',');
+  if (cats !== w.Lib.KEYSET_IDS.slice().sort().join(',')) return 'FAIL: assist.json 的類別是 ' + cats + '（與記號列收的五類不同）';
   const counts = w.Lib.KEYSET_IDS.map((id) => w.Lib.keysFromAssist(w.assist, id).length);
-  if (counts.join(',') !== '16,34,16,37,5') return 'FAIL: 各組鍵數 ' + counts.join(',') + '（應為 16,34,16,37,5 ＝ 108）';
+  if (counts.join(',') !== '16,34,37,16,5') return 'FAIL: 各組鍵數 ' + counts.join(',') + '（應為 16,34,37,16,5 ＝ 108）';
+  // 鍵數相同的兩組（母音與元音符號都是 16）對調了，上面那一行看不出來 ⇒ 另外確認第 3 組真的是下加輔音（有那三個沒有記法的固定形）、第 4 組的字形帶載體
+  if (w.Lib.keysFromAssist(w.assist, w.Lib.KEYSET_IDS[2]).filter((k) => !k.ins).length !== 3) return 'FAIL: 第 3 組不是下加輔音';
+  if (!w.Lib.keysFromAssist(w.assist, w.Lib.KEYSET_IDS[3]).every((k) => k.glyph.startsWith(C(0x25CC)))) return 'FAIL: 第 4 組不是元音符號';
   const tsheg = w.Lib.keysFromAssist(w.assist, 'punct')[0];
   if (!tsheg || tsheg.ins !== '  ' || tsheg.glyph !== TSHEG || !tsheg.label.trim()) return 'FAIL: 標點組第一鍵不是 tsheg（兩個空格、鍵上有看得見的標示）';
   if (w.Lib.keysFromAssist(w.assist, 'nope').length || w.Lib.keysFromAssist(null, 'vowel').length) return 'FAIL: 不認得的組或讀不到資料時沒有回空陣列';
@@ -853,6 +857,9 @@ const MUTANTS = [
   ['㉒', '聚焦時仍墊底部安全區', (w) => { w.css = w.css.replace('.shell:has(#tsm-input:focus) { padding-bottom: 0; }', ''); }],
   ['㉓', '拉丁欄的複製列搬回頂端', (w) => { w.html = w.html.replace(/(<div class="out-block out-block-latin">\n)(        <div class="out-value">.*\n)((?:.*\n){6})/, '$1$3$2'); }],
   ['㉔', '下加輔音排到子音前面', (w) => { w.Lib.KEYSET_IDS.splice(0, 5, 'vowel', 'subjoined', 'consonant', 'vowel_sign', 'punct'); }],
+  ['㉔', '改回資料的順序（元音符號在下加輔音前面，2026-10-12 之前）', (w) => { w.Lib.KEYSET_IDS.splice(0, 5, 'vowel', 'consonant', 'vowel_sign', 'subjoined', 'punct'); }],
+  ['㉔', '母音與元音符號對調（兩組都是 16 鍵，只數鍵數看不出來）', (w) => { w.Lib.KEYSET_IDS.splice(0, 5, 'vowel_sign', 'consonant', 'subjoined', 'vowel', 'punct'); }],
+  ['㉔', 'assist.json 少了一類而記號列還收著', (w) => { w.assist.categories = w.assist.categories.filter((c) => c.id !== 'punct'); w.Lib.KEYSET_IDS.pop(); w.Lib.KEYSET_IDS.push('punct'); }],
   ['㉔', '標點組被拿掉', (w) => { w.Lib.KEYSET_IDS.pop(); }],
   ['㉔', 'assist.json 多了一類而記號列沒有', (w) => { w.assist.categories.push({ id: 'extra', entries: [{ code: 'x', char: 'x' }] }); }],
   ['㉔', '子音組被去重後少一格', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => (id === 'consonant' ? f(a, id).slice(1) : f(a, id)); }],

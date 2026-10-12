@@ -4,8 +4,8 @@
  * 藏文轉換本身不在這裡：唯一的轉換介面是 ./tibetan-siddham-converter.js（ESM 防腐層，
  * tibetan-siddham 的 byte-identical 複製件）。本檔放的是**這支 app 自己的、離開畫面仍成立**的邏輯：
  *
- *   KEYSET_IDS                 記號列的五組（切換順序）：'vowel'（母音）→ 'consonant'（子音）→ 'vowel_sign'（元音符號）
- *                              → 'subjoined'（下加輔音）→ 'punct'（標點）
+ *   KEYSET_IDS                 記號列的五組（切換順序）：'vowel'（母音）→ 'consonant'（子音）→ 'subjoined'（下加輔音）
+ *                              → 'vowel_sign'（元音符號）→ 'punct'（標點）
  *   keysFromAssist(assist, id) → [{ ins, glyph, label }] —— 由 tibetan-siddham 的 data/assist.json 推出該組的鍵
  *   normalizeKeyset(id)        → 白名單版本（從 localStorage 讀回來的不可信）
  *   insertAt(value, s, e, t)   → { value, caret } —— 把 t 插在選取範圍 [s, e) 上
@@ -42,10 +42,14 @@
    *   元音符號 vowel_sign —— 接在子音後面的母音記號與點畫（`aa` `i` … `;m` `.h`）
    *   下加輔音 subjoined  —— **不帶 a**（`k` `kh` … `k.s`）；音節開頭的那一個照樣畫成全形
    *   標點 punct          —— tsheg（兩個空格）、`|` shad、`||` nyis shad、`~` 𑗁、`~~` yig mgo
-   * 順序照 data/assist.json 的類別順序（也就是 tibetan-siddham 輔助輸入面板的順序）——兩支 app 看到的是同一個排法。
+   * ⭐ **順序是 owner 指定的**〔2026-10-12：「將下加輔音的位置放到元音的前面（兩個位置對調）」〕：
+   *    母音 → 子音 → **下加輔音 → 元音符號** → 標點。打一個音節的手順是「不帶 a 的輔音（下加輔音那一組）→ 母音記號與點畫」，
+   *    所以下加輔音排在元音符號前面——與 bonji-mobile 把「接續」排在「體文」前面是同一個道理。
+   *    ⚠️ 這**不是** data/assist.json 的類別順序（那邊、也就是 tibetan-siddham 桌機版面板，是 元音符號 → 下加輔音）；
+   *    下面各組的說明照資料的順序列，切換順序以 KEYSET_IDS 為準。
    * ⚠️ **鍵不寫死在這裡**：每一格的記法與字形在 tibetan-siddham 的 data/assist.json，本 app 那一份是它的
    *    byte-identical 複製件。寫死一份就是第二份真相，那邊改了這裡不會知道。
-   *    這裡寫死的只有「收哪幾類、依什麼順序」——assist.json 多一類而這裡沒有時，verify.js 第 ㉔ 條會紅。
+   *    這裡寫死的只有「收哪幾類、依什麼順序」——assist.json 多一類或少一類而這裡沒跟上時，verify.js 第 ㉔ 條會紅。
    * ⚠️ **子音鍵帶隱含 a**：`ka` 之後再按元音符號 `i` 是 `kai`（ཀཻ），不是 ཀི。要接母音用下加輔音那一組（`k` ＋ `i`）
    *    ——與 tibetan-siddham／bonji 同一個慣例，本 app 不替使用者改寫前一個字。
    * ⚠️ **記法照資料原樣插入、不轉小寫**（bonji-mobile 轉小寫是因為它的來源有一格大寫 `S`）：assist.json 的每一格
@@ -54,7 +58,7 @@
    *    「哪一類要加」寫在資料裡，這裡不判斷碼位範圍（同 tibetan-siddham 的 assist.js）。
    * 沒有記法的格（下加輔音裡三個固定形 U+0FBA／U+0FBB／U+0FBC，轉換器打不出來）：`ins` 是空字串，
    *    鍵照樣在（供辨認），按下去只出提示、不插入任何東西。**不去重**——這三格的記法都是空的。 */
-  var KEYSET_IDS = ['vowel', 'consonant', 'vowel_sign', 'subjoined', 'punct'];
+  var KEYSET_IDS = ['vowel', 'consonant', 'subjoined', 'vowel_sign', 'punct'];
 
   function keysFromAssist(assist, id) {
     var cats = assist && assist.categories;
