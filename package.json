@@ -1,0 +1,23 @@
+{
+  "name": "tibetan-siddham-mobile",
+  "version": "1.0.0",
+  "description": "手機優先的藏文梵字轉換器：ASCII / IAST 羅馬轉寫即時轉成藏文梵字（Tibetan-script Sanskrit）與拉丁轉寫，輸入貼著鍵盤、輸出在上，打字的同時就看得到結果、不必捲動；附藏文字形的記號列一鍵插入記法、紀錄清單與 JSON 輸出，支援 light/dark 與三語。",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "verify": "node scripts/verify.js"
+  },
+  "keywords": [
+    "tibetan",
+    "sanskrit",
+    "transliteration",
+    "mobile",
+    "express",
+    "materialize"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "morgan": "^1.10.0"
+  }
+}

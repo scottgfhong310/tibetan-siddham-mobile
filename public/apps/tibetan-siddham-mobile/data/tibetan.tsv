@@ -1,0 +1,88 @@
+# kind	token	out	comment
+vowel	a		inherent a
+vowel	aa	ཱ	ā (0F71)
+vowel	i	ི	i (0F72)
+vowel	ii	ཱི	ī (0F73)
+vowel	u	ུ	u (0F74)
+vowel	uu	ཱུ	ū (0F75)
+vowel	_uu	ཱུ	ū (0F75)
+vowel	r.	ྲྀ	ṛ (0F76)
+vowel	rr.	ཷ	ṝ (0F77)
+vowel	l.	ླྀ	ḷ (0F78)
+vowel	ll.	ཹ	ḹ (0F79)
+vowel	e	ེ	e (0F7A)
+vowel	ai	ཻ	ai (0F7B)
+vowel	o	ོ	o (0F7C)
+vowel	au	ཽ	au (0F7D; unicode name 'OO')
+vowel	ee	ཻ	alias: ee -> ai sign (legacy)
+vowel	oo	ཽ	alias: oo -> au/OO sign (legacy)
+cons	k	ཀ	ka
+cons	kh	ཁ	kha
+cons	g	ག	ga
+cons	gh	གྷ	gha
+cons	ng	ང	ṅa
+cons	c	ྩ	subjoined TSA (user mapping: c -> 0FA9)
+cons	ch	ྪ	subjoined TSHA (user mapping: ch -> 0FAA)
+cons	j	ྫ	subjoined DZA (user mapping: j -> 0FAB)
+cons	jh	ྫྷ	subjoined DZHA (user mapping: jh -> 0FAC)
+# --- user mapping overrides (v2026-02-05.1) ---
+cons	ca	ཙ	TSA (user mapping: ca -> 0F59)
+cons	cha	ཚ	TSHA (user mapping: cha -> 0F5A)
+cons	ja	ཛ	DZA (user mapping: ja -> 0F5B)
+cons	jha	ཛྷ	DZHA (user mapping: jha -> 0F5C)
+cons	;na	ང	NGA (user mapping: ;na -> 0F44)
+cons	;n	ྔ	subjoined NGA (user mapping: ;n -> 0F94)
+cons	~na	ཉ	NYA (user mapping: ~na -> 0F49)
+cons	~n	ྙ	subjoined NYA (user mapping: ~n -> 0F99)
+cons	.ta	ཊ	TTA (retroflex) (user mapping: .ta -> 0F4A)
+cons	.t	ྚ	subjoined TTA (user mapping: .t -> 0F9A)
+cons	.tha	ཋ	TTHA (retroflex) (user mapping: .tha -> 0F4B)
+cons	.th	ྛ	subjoined TTHA (user mapping: .th -> 0F9B)
+cons	.da	ཌ	DDA (retroflex) (user mapping: .da -> 0F4C)
+cons	.d	ྜ	subjoined DDA (user mapping: .d -> 0F9C)
+cons	.dha	ཌྷ	DDHA (retroflex) (user mapping: .dha -> 0F4D)
+cons	.dh	ྜྷ	subjoined DDHA (user mapping: .dh -> 0F9D)
+cons	.na	ཎ	NNA (retroflex) (user mapping: .na -> 0F4E)
+cons	.n	ྞ	subjoined NNA (user mapping: .n -> 0F9E)
+cons	;sa	ཤ	SHA (user mapping: ;sa -> 0F64)
+cons	;s	ྴ	subjoined SHA (user mapping: ;s -> 0FB4)
+cons	.sa	ཥ	SHA (user mapping: .sa -> 0F65)
+cons	.s	ྵ	subjoined SHA (user mapping: .s -> 0FB5)
+# --- end user mapping overrides ---
+cons	ny	ཉ	ña
+cons	T	ཊ	ṭa (retroflex)
+cons	Th	ཋ	ṭha (retroflex)
+cons	D	ཌ	ḍa (retroflex)
+cons	Dh	ཌྷ	ḍha (retroflex)
+cons	N	ཎ	ṇa (retroflex)
+cons	t	ཏ	ta
+cons	th	ཐ	tha
+cons	d	ད	da
+cons	dh	དྷ	dha
+cons	n	ན	na
+cons	p	པ	pa
+cons	ph	ཕ	pha
+cons	b	བ	ba
+cons	bh	བྷ	bha
+cons	m	མ	ma
+cons	y	ཡ	ya
+cons	r	ར	ra
+cons	l	ལ	la
+cons	v	ཝ	va
+cons	w	ཝ	wa (alias)
+cons	sh	ཤ	śa
+cons	Sh	ཥ	ṣa
+cons	s	ས	sa
+cons	h	ཧ	ha
+cons	z	ཟ	za (alias)
+cons	k.s	ཀྵ	kṣa ligature (KSSA)
+cons	j~n	ཛྙ	jña (approx; adjust)
+cons	f	ཕ༹	fa (pha + tsa-phru)
+cons	.x	ཁ༹	xa (kha + tsa-phru; optional)
+cons	.q	ཀ༹	qa (ka + tsa-phru; optional)
+sign	;m	ཾ	anusvara (0F7E)
+sign	~m	ྃ	candrabindu/nasalization (0F83)
+sign	.h	ཿ	visarga (0F7F)
+sign	^h	྄	halanta/virama (0F84) explicit
+punct	 	་	space -> tsheg (0F0B)
+punct	-		optional hyphen ignored/removed

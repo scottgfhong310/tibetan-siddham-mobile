@@ -1,0 +1,481 @@
+{
+  "source": "由孵化器原型 tibetan 的虛擬鍵盤「藏文梵字」五組鍵位整理而來（2026-10-11）；標點一組依本 app DESIGN §5 的標點政策。逐鍵由 scripts/verify.js 對轉換器驗證。",
+  "categories": [
+    {
+      "id": "vowel",
+      "entries": [
+        {
+          "code": "a",
+          "char": "ཨ"
+        },
+        {
+          "code": "aa",
+          "char": "ཨཱ"
+        },
+        {
+          "code": "i",
+          "char": "ཨི"
+        },
+        {
+          "code": "ii",
+          "char": "ཨཱི"
+        },
+        {
+          "code": "u",
+          "char": "ཨུ"
+        },
+        {
+          "code": "uu",
+          "char": "ཨཱུ"
+        },
+        {
+          "code": ",r",
+          "char": "རྀ"
+        },
+        {
+          "code": ",rr",
+          "char": "རཱྀ"
+        },
+        {
+          "code": ",l",
+          "char": "ལྀ"
+        },
+        {
+          "code": ",ll",
+          "char": "ལཱྀ"
+        },
+        {
+          "code": "e",
+          "char": "ཨེ"
+        },
+        {
+          "code": "ai",
+          "char": "ཨཻ"
+        },
+        {
+          "code": "o",
+          "char": "ཨོ"
+        },
+        {
+          "code": "au",
+          "char": "ཨཽ"
+        },
+        {
+          "code": "a;m",
+          "char": "ཨཾ"
+        },
+        {
+          "code": "a.h",
+          "char": "ཨཿ"
+        }
+      ]
+    },
+    {
+      "id": "consonant",
+      "entries": [
+        {
+          "code": "ka",
+          "char": "ཀ"
+        },
+        {
+          "code": "kha",
+          "char": "ཁ"
+        },
+        {
+          "code": "ga",
+          "char": "ག"
+        },
+        {
+          "code": "gha",
+          "char": "གྷ"
+        },
+        {
+          "code": ";na",
+          "char": "ང"
+        },
+        {
+          "code": "ca",
+          "char": "ཙ"
+        },
+        {
+          "code": "cha",
+          "char": "ཚ"
+        },
+        {
+          "code": "ja",
+          "char": "ཛ"
+        },
+        {
+          "code": "jha",
+          "char": "ཛྷ"
+        },
+        {
+          "code": "~na",
+          "char": "ཉ"
+        },
+        {
+          "code": ".ta",
+          "char": "ཊ"
+        },
+        {
+          "code": ".tha",
+          "char": "ཋ"
+        },
+        {
+          "code": ".da",
+          "char": "ཌ"
+        },
+        {
+          "code": ".dha",
+          "char": "ཌྷ"
+        },
+        {
+          "code": ".na",
+          "char": "ཎ"
+        },
+        {
+          "code": "ta",
+          "char": "ཏ"
+        },
+        {
+          "code": "tha",
+          "char": "ཐ"
+        },
+        {
+          "code": "da",
+          "char": "ད"
+        },
+        {
+          "code": "dha",
+          "char": "དྷ"
+        },
+        {
+          "code": "na",
+          "char": "ན"
+        },
+        {
+          "code": "pa",
+          "char": "པ"
+        },
+        {
+          "code": "pha",
+          "char": "ཕ"
+        },
+        {
+          "code": "ba",
+          "char": "བ"
+        },
+        {
+          "code": "bha",
+          "char": "བྷ"
+        },
+        {
+          "code": "ma",
+          "char": "མ"
+        },
+        {
+          "code": "ya",
+          "char": "ཡ"
+        },
+        {
+          "code": "ra",
+          "char": "ར"
+        },
+        {
+          "code": "la",
+          "char": "ལ"
+        },
+        {
+          "code": "va",
+          "char": "ཝ"
+        },
+        {
+          "code": ";sa",
+          "char": "ཤ"
+        },
+        {
+          "code": ".sa",
+          "char": "ཥ"
+        },
+        {
+          "code": "sa",
+          "char": "ས"
+        },
+        {
+          "code": "ha",
+          "char": "ཧ"
+        },
+        {
+          "code": "k.sa",
+          "char": "ཀྵ",
+          "note": "kṣa conjunct (subjoined)"
+        }
+      ]
+    },
+    {
+      "id": "vowel_sign",
+      "carrier": "◌",
+      "entries": [
+        {
+          "code": "a",
+          "char": "",
+          "note": "inherent a"
+        },
+        {
+          "code": "aa",
+          "char": "ཱ"
+        },
+        {
+          "code": "i",
+          "char": "ི"
+        },
+        {
+          "code": "ii",
+          "char": "ཱི"
+        },
+        {
+          "code": "u",
+          "char": "ུ"
+        },
+        {
+          "code": "uu",
+          "char": "ཱུ"
+        },
+        {
+          "code": ",r",
+          "char": "ྲྀ"
+        },
+        {
+          "code": ",rr",
+          "char": "ཷ"
+        },
+        {
+          "code": ",l",
+          "char": "ླྀ"
+        },
+        {
+          "code": ",ll",
+          "char": "ཹ"
+        },
+        {
+          "code": "e",
+          "char": "ེ"
+        },
+        {
+          "code": "ai",
+          "char": "ཻ"
+        },
+        {
+          "code": "o",
+          "char": "ོ"
+        },
+        {
+          "code": "au",
+          "char": "ཽ"
+        },
+        {
+          "code": ";m",
+          "char": "ཾ",
+          "note": "anusvāra"
+        },
+        {
+          "code": ".h",
+          "char": "ཿ",
+          "note": "visarga"
+        }
+      ]
+    },
+    {
+      "id": "subjoined",
+      "carrier": "◌",
+      "entries": [
+        {
+          "code": "k",
+          "char": "ྐ"
+        },
+        {
+          "code": "kh",
+          "char": "ྑ"
+        },
+        {
+          "code": "g",
+          "char": "ྒ"
+        },
+        {
+          "code": "gh",
+          "char": "ྒྷ"
+        },
+        {
+          "code": ";n",
+          "char": "ྔ"
+        },
+        {
+          "code": "c",
+          "char": "ྩ"
+        },
+        {
+          "code": "ch",
+          "char": "ྪ"
+        },
+        {
+          "code": "j",
+          "char": "ྫ"
+        },
+        {
+          "code": "jh",
+          "char": "ྫྷ"
+        },
+        {
+          "code": "~n",
+          "char": "ྙ"
+        },
+        {
+          "code": ".t",
+          "char": "ྚ"
+        },
+        {
+          "code": ".th",
+          "char": "ྛ"
+        },
+        {
+          "code": ".d",
+          "char": "ྜ"
+        },
+        {
+          "code": ".dh",
+          "char": "ྜྷ"
+        },
+        {
+          "code": ".n",
+          "char": "ྞ"
+        },
+        {
+          "code": "t",
+          "char": "ྟ"
+        },
+        {
+          "code": "th",
+          "char": "ྠ"
+        },
+        {
+          "code": "d",
+          "char": "ྡ"
+        },
+        {
+          "code": "dh",
+          "char": "ྡྷ"
+        },
+        {
+          "code": "n",
+          "char": "ྣ"
+        },
+        {
+          "code": "p",
+          "char": "ྤ"
+        },
+        {
+          "code": "ph",
+          "char": "ྥ"
+        },
+        {
+          "code": "b",
+          "char": "ྦ"
+        },
+        {
+          "code": "bh",
+          "char": "ྦྷ"
+        },
+        {
+          "code": "m",
+          "char": "ྨ"
+        },
+        {
+          "code": "y",
+          "char": "ྱ"
+        },
+        {
+          "code": "",
+          "char": "ྻ",
+          "note": "alt y",
+          "alt": "y"
+        },
+        {
+          "code": "r",
+          "char": "ྲ"
+        },
+        {
+          "code": "",
+          "char": "ྼ",
+          "note": "alt r",
+          "alt": "r"
+        },
+        {
+          "code": "l",
+          "char": "ླ"
+        },
+        {
+          "code": "v",
+          "char": "ྭ"
+        },
+        {
+          "code": "",
+          "char": "ྺ",
+          "note": "alt v",
+          "alt": "v"
+        },
+        {
+          "code": ";s",
+          "char": "ྴ"
+        },
+        {
+          "code": ".s",
+          "char": "ྵ"
+        },
+        {
+          "code": "s",
+          "char": "ྶ"
+        },
+        {
+          "code": "h",
+          "char": "ྷ"
+        },
+        {
+          "code": "k.s",
+          "char": "ྐྵ",
+          "note": "kṣa conjunct (subjoined)"
+        }
+      ]
+    },
+    {
+      "id": "punct",
+      "entries": [
+        {
+          "code": "  ",
+          "char": "་",
+          "label": "␣␣",
+          "note": "tsheg"
+        },
+        {
+          "code": "|",
+          "char": "།",
+          "note": "shad"
+        },
+        {
+          "code": "||",
+          "char": "༎",
+          "note": "nyis shad"
+        },
+        {
+          "code": "~",
+          "char": "𑗁",
+          "note": "siddham sign"
+        },
+        {
+          "code": "~~",
+          "char": "༄",
+          "note": "yig mgo"
+        }
+      ]
+    }
+  ]
+}

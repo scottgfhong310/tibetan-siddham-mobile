@@ -1,0 +1,220 @@
+/* side-tool.css — 右側浮動工具列（家族招牌元件）
+ *
+ * ⚠️ **本檔是家族權威版**（比照 materialize-dark.css）。各 app 的
+ *    public/apps/<name>/side-tool.css 是它的 **byte-identical 複製件**——
+ *    要改就改這裡，再同步所有複製點；**不要在 app 內就地改**。
+ *    稽核指令見 DESIGN_GUIDELINES §5.5（此處不寫 shell glob——glob 內的星號斜線
+ *    會提前關閉 CSS 註解，整份樣式表從那裡開始解析失敗；2026-07-26 實際踩過）。
+ *
+ * ⚠️ **本檔只放「側鍵元件本身」**。app 專屬的東西——設定 modal 的皮膚、
+ *    某支 app 才有的面板、drop-overlay……——一律放各 app 自己的 <name>.css。
+ *    2026-07-26 收斂前，7 支 app 的複製件夾帶了 #config-modal／#paste-modal 的樣式
+ *    （其中 4 支的 HTML 根本沒有那個 modal，是複製時整包帶進來的死 CSS），
+ *    正是同一支「共用件」長出 7 個不同 md5 的主因。
+ *
+ * 規範：DESIGN_GUIDELINES §5.5。版面用 .side-tools flex 容器自動堆疊
+ *      （不綁固定 id 數量／順序），顏色以 CSS 變數驅動、隨 light / dark 切換。
+ *      消費端須自備 --tool-fg / --tool-bg / --border / --accent 四個 token。
+ */
+
+:root {
+  --tool-size: 46px;  /* icon 直徑 */
+  --tool-gap: 9px;    /* icon 之間的間距 */
+}
+
+/* 矮視窗：icon 緊湊化，工具數多時整欄捲動（不會被遮） */
+@media (max-height: 800px) {
+  :root { --tool-size: 40px; --tool-gap: 6px; }
+}
+
+/* right 的 --content-sb 是「app-shell 版型」的捲軸補償（§5.5）：
+ * 視窗捲動的頁，經典捲軸會縮小視口，fixed 的 right:12px 自然避開捲軸；
+ * app-shell 的頁（body overflow:hidden、捲軸在內層容器）視口＝整個視窗，
+ * 側鍵會壓在那條貼齊右緣的捲軸上。消費端若是 app-shell，就在控制器量出
+ * 內層捲動容器的 offsetWidth - clientWidth 寫進 --content-sb（overlay 捲軸＝0）；
+ * 沒有定義時 var() 退回 0，對視窗捲動的 app 完全沒有影響。 */
+.side-tools {
+  position: fixed;
+  right: calc(12px + var(--content-sb, 0px));
+  top: 50%;
+  transform: translateY(-50%);   /* 垂直居中於畫面右側 */
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tool-gap);
+  padding: 2px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;            /* Firefox 隱藏卷軸 */
+  z-index: 1002;
+  transition: opacity .15s ease;
+}
+.side-tools::-webkit-scrollbar { display: none; }   /* WebKit 隱藏卷軸 */
+
+.side-tool {
+  flex: 0 0 auto;
+  width: var(--tool-size);
+  height: var(--tool-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 1002;
+  color: var(--tool-fg);
+  background: var(--tool-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  transition: transform .1s ease, filter .15s ease, background .15s ease, color .15s ease, opacity .15s ease;
+  user-select: none;
+}
+
+/* 側欄（sidenav / 檔案清單 / 匯出檔清單）開啟時，隱藏整排工具；收起後再淡入 */
+body.sidenav-open .side-tools {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.side-tool:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.side-tool:active {
+  transform: translateY(0);
+}
+
+.side-tool i.material-icons {
+  font-size: 22px;
+  line-height: 1;
+}
+
+/* toggle 開啟狀態以 accent 色標示（如閱讀風格、格式化開關） */
+.side-tool.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* 警示鍵（清除頁面／清空資料夾）hover 轉紅（§5.5）。
+ * 兩個主題不同值〔owner 2026-08-22〕：原本兩邊都是 #ff6e6e，而它在白底上只有 2.72:1
+ * ——過不了非文字元素的 3:1；淺色壓暗一階成 #d93636（對 hover 底 --surface-2 4.09:1）。
+ * 處置同各 app 的 --warn：亮色被白色包圍會退成一片糊，暗一階才看得出是紅的。
+ * ⚠️ 刻意**不**寫成 var(--danger, …)：家族已有 app 拿 `--danger` 當自己的警示色、
+ * 而且值不同（`circle-text` 淺色是 #c1121f）。讀它會讓共用件的顏色被某一支 app 的
+ * 私有決定牽著走，而那不會有任何東西報錯。
+ * ⚠️ 涵蓋三個 id。`#setting-clear-page` 是 2026-08-22 補進來的〔owner 指示〕——在那之前
+ * 註解寫著「清除頁面」而選擇器裡沒有它，於是 markdown-reader 的「清除頁面內容」從來不轉紅
+ * （唯一一支有這個 id 的 app）。同一顆鍵在別的 app 叫 `#setting-clear`，早就是紅的；
+ * 兩個名字做同一件事而只有一個有警示，那個差別沒有任何理由。 */
+#setting-clear:hover,
+#setting-clear-downloads:hover,
+#setting-clear-page:hover {
+  color: #ff6e6e;
+}
+
+/* 特異性 (1,2,0) > 上面的 (1,1,0)，順序也在後面 ⇒ 淺色一定贏。
+ * 沒有 data-theme 的頁面（少數孵化器原型）不會命中這條，維持深色那個值。 */
+[data-theme="light"] #setting-clear:hover,
+[data-theme="light"] #setting-clear-downloads:hover,
+[data-theme="light"] #setting-clear-page:hover {
+  color: #d93636;
+}
+
+/* ===== App icon 徽章（§5.5「（甲）」；沒用到的 app 這幾條不會命中） =====
+ * 雙色標記拆成兩層同 viewBox 的 mask 疊圖（同 .glyph 缺字的手法）：
+ * 字母層隨 --tool-fg 跟著 light/dark 變色，另一層固定品牌色。
+ * 單張彩色 tile 的 app 則在自己的 <name>.css 覆寫 background（見 §5.5 變體）。 */
+.side-tool .app-icon {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+}
+.side-tool .app-icon-letter,
+.side-tool .app-icon-arrow {
+  position: absolute;
+  inset: 0;
+  -webkit-mask: var(--g) center / contain no-repeat;
+  mask: var(--g) center / contain no-repeat;
+}
+.side-tool .app-icon-letter { background-color: var(--tool-fg); }
+.side-tool .app-icon-arrow  { background-color: #5fcfa0; }   /* 品牌綠，不隨主題變 */
+
+/* 承載徽章的那顆鍵：方形圓角（squircle）取代正圓，不被圓約束；
+ * 底色／邊框仍沿用主題變數，隨 light/dark 自動切換。 */
+#setting-menu {
+  border-radius: 22%;
+}
+
+/* 第一顆是 app-icon 徽章 → 與第二顆間距加倍（把「品牌」和下面的「工具」視覺分區） */
+.side-tools > .side-tool:first-child:has(.app-icon) {
+  margin-bottom: var(--tool-gap);   /* flex gap 之外再加一份＝加倍 */
+}
+
+/* ===== 溢出收納（§5.5）：矮視窗放不下時，中段的 app 工具收進 #setting-more =====
+ * 判斷與代理項都在 side-tool.js（容量由高度算出、不搬 DOM）；本檔只管長相。
+ * 被收起來的鍵留在原地不動，只是不顯示——app 綁在它身上的 listener 完全不受影響。 */
+.side-tool.is-overflow {
+  display: none !important;
+}
+
+/* 選單：**貼著 more 鍵**（位置由 side-tool.js 在開啟時量出來寫進 top/right，
+   因為側鍵列垂直居中、more 的 y 會隨工具數與視窗高度變）。自己可捲，工具再多也不溢出視窗。
+   下面的 top/right 只是 JS 還沒定位前的保險值。 */
+.side-tool-menu {
+  position: fixed;
+  right: calc(12px + var(--content-sb, 0px) + var(--tool-size) + 10px);
+  top: 12px;
+  display: none;
+  min-width: 190px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-radius: 10px;
+  color: var(--tool-fg);
+  background: var(--tool-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  z-index: 1003;
+}
+
+.side-tool-menu.open {
+  display: block;
+}
+
+.side-tool-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: .9rem;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.side-tool-menu-item:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.side-tool-menu-item i.material-icons {
+  font-size: 20px;
+  flex: 0 0 auto;
+}
+
+/* 側欄開啟時與側鍵列一起收（列是淡出，選單直接關） */
+body.sidenav-open .side-tool-menu {
+  display: none;
+}
+
+/* 列印時隱藏所有工具 */
+@media print {
+  .side-tools,
+  .side-tool,
+  .side-tool-menu {
+    display: none !important;
+  }
+}

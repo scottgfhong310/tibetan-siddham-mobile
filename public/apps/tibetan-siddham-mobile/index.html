@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <!-- interactive-widget=resizes-content：Android Chrome 鍵盤彈出時連 layout viewport 一起縮
+       （iOS Safari 不認這個值，那邊靠 visualViewport，見 tibetan-siddham-mobile.js 的 fitShell）。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title data-i18n-doctitle="title.page">藏文梵字・手機版</title>
+  <!-- 防主題閃爍：render 前先讀 localStorage 設好 data-theme + light/dark-mode class
+       （class 是給共用 materialize-dark.css 用的；無 light-mode 時它會跟隨系統深色偏好） -->
+  <script>try { var t = localStorage.getItem('tibetan-siddham-mobile-theme') || 'dark'; var r = document.documentElement; r.dataset.theme = t; r.classList.add(t === 'light' ? 'light-mode' : 'dark-mode'); } catch (e) {}</script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" />
+  <link rel="stylesheet" href="./materialize-dark.css" />
+  <link rel="stylesheet" href="./tibetan-siddham-mobile.css" />
+  <link rel="stylesheet" href="./side-tool.css" />
+</head>
+<body class="is-empty">
+  <!-- 外殼：高度＝可見範圍（鍵盤彈出後扣掉鍵盤），整頁不捲；只有輸出區自己捲。
+       由上而下：頁首（鍵盤開著時收起）→ 輸出 → 記號列 → 輸入。輸入貼底＝貼著鍵盤。 -->
+  <div id="shell" class="shell">
+    <header class="topbar">
+      <h1 class="topbar-title" data-i18n="app.title">藏文梵字・手機版</h1>
+      <!-- 紀錄・JSON 輸出：鈕上的數字＝清單現在有幾筆（0 筆時不顯示） -->
+      <a href="#!" id="open-records" class="topbar-btn" data-i18n-title="tool.records" title="紀錄・JSON 輸出">
+        <i class="material-icons">data_object</i>
+        <span id="rec-count" class="rec-badge" hidden></span>
+      </a>
+      <a href="#!" id="open-options" class="topbar-btn" data-i18n-title="tool.options" title="選項">
+        <i class="material-icons">tune</i>
+      </a>
+      <span id="tools-toggle" class="topbar-btn tools-toggle" role="button" tabindex="0"
+        data-i18n-title="tool.toggleTools" title="工具列開關">
+        <i class="material-icons">more_vert</i>
+      </span>
+    </header>
+
+    <section class="out-pane" id="out-pane">
+      <!-- 藏文｜拉丁轉寫左右並排（2:1）。**沒有悉曇欄**〔owner 2026-10-12〕：藏文梵字的組字與悉曇的組字並不是一一對應，
+           並排反而造成混淆——本 app 整支不處理悉曇（要悉曇用 bonji-mobile）。
+           每一欄：捲動框在上、標籤＋複製鈕在**底部**（.out-foot）。
+           Claude App 裡鍵盤彈出時整頁被往上推，欄位頂端會落在 App 標題列底下——放在頂端的話複製鈕按不到。
+           .out-value 是捲動框、.out-text 是文字：文字靠底（margin-top:auto），短的時候貼著底列。 -->
+      <div class="out-block out-block-tibetan">
+        <div class="out-value"><div id="out-tibetan" class="out-text tibetan-text" aria-live="polite"></div></div>
+        <div class="out-foot">
+          <span class="out-label" data-i18n="out.tibetan">藏文梵字</span>
+          <!-- 加入紀錄清單：放在這裡是因為鍵盤開著時頁首按不到（Safari 收起、Claude App 被推到標題列底下），
+               而分段記一部咒語時是「打一段、加一筆」連著做。標題用紀錄面板裡那一欄現在的值。 -->
+          <a href="#!" id="rec-add-quick" class="out-copy out-add" data-i18n-title="tool.recAdd" title="加入紀錄清單">
+            <i class="material-icons">playlist_add</i>
+          </a>
+          <a href="#!" class="out-copy" data-copy="tibetan" data-i18n-title="tool.copy" title="複製">
+            <i class="material-icons">content_copy</i>
+          </a>
+        </div>
+      </div>
+      <div class="out-block out-block-latin">
+        <div class="out-value"><div id="out-latin" class="out-text latin-text"></div></div>
+        <div class="out-foot">
+          <span class="out-label" data-i18n="out.latin">拉丁轉寫</span>
+          <a href="#!" class="out-copy" data-copy="latin" data-i18n-title="tool.copy" title="複製">
+            <i class="material-icons">content_copy</i>
+          </a>
+        </div>
+      </div>
+
+      <!-- 空狀態：輸入是空的時候取代上面兩塊。
+           ⚠️ 範例裡的兩個空格是記法（＝ tsheg），chip 以 white-space:pre 顯示，不可以被排版收成一個 -->
+      <div class="empty-state">
+        <p class="hint" data-i18n-html="input.hint">記法：<code>;m</code>＝ṁ、<code>.h</code>＝ḥ、<code>~m</code>＝m̐、長母音 <code>aa</code>＝ā。</p>
+        <div class="examples">
+          <span class="examples-label" data-i18n="examples.label">範例：</span>
+          <a href="#!" class="chip ex" data-ex="o;m">o;m</a>
+          <a href="#!" class="chip ex" data-ex="o;m  aa.h  huu~m">o;m  aa.h  huu~m</a>
+          <a href="#!" class="chip ex" data-ex="siddha;m">siddha;m</a>
+          <a href="#!" class="chip ex" data-ex="hrii.h">hrii.h</a>
+          <a href="#!" class="chip ex" data-ex="na ma.h |">na ma.h |</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 記號列：鍵由 tibetan-siddham-mobile.js 依 data/assist.json 產生（TibetanSiddhamMobileLib.keysFromAssist），
+         母音／子音／元音符號／下加輔音／標點五組；鍵上畫藏文字形、底下印記法。
+         ⚠️ 按鍵不可以讓輸入框失焦——失焦鍵盤就收起來了（見 bindKeybar）。 -->
+    <div id="keybar" class="keybar" role="toolbar" data-i18n-title="keybar.label" title="記號"></div>
+
+    <div class="in-bar">
+      <textarea id="tsm-input" class="tsm-input mono" rows="1"
+        autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"
+        data-i18n-placeholder="input.placeholder" placeholder="例如：o;m"></textarea>
+      <a href="#!" id="clear-input" class="in-clear" data-i18n-title="tool.clear" title="清除輸入">
+        <i class="material-icons">clear</i>
+      </a>
+      <!-- 記號列切換：母音 → 子音 → 元音符號 → 下加輔音 → 標點（循環）。鈕上的字＝記號列「現在」是哪一組（文字由 tibetan-siddham-mobile.js 依狀態填） -->
+      <button type="button" id="keyset-toggle" class="keyset-toggle"
+        data-i18n-title="tool.keyset" title="切換記號列：母音／子音／元音符號／下加輔音／標點" aria-live="polite"></button>
+    </div>
+  </div>
+
+  <!-- 右側浮動工具列（家族共用 side-tool.css，§5.5）：只有主題與語言兩顆 chrome。
+       手機上預設收起（右上角 ⋮ 叫回來），否則它會壓在輸出區的右緣。 -->
+  <div class="side-tools">
+    <a id="setting-mode" class="side-tool" href="#!" data-i18n-title="tool.mode" title="切換 light / dark">
+      <i class="material-icons">dark_mode</i>
+    </a>
+    <a id="setting-lang" class="side-tool" href="#!" data-i18n-title="tool.lang" title="語言">
+      <i class="material-icons">translate</i>
+    </a>
+  </div>
+
+  <!-- 選項：Materialize bottom-sheet。select 用系統原生（browser-default）——
+       Materialize 自製下拉在觸控裝置上會選到下一列（家族 coffee-deposit 實測）。 -->
+  <div id="options-modal" class="modal bottom-sheet options-sheet">
+    <div class="modal-content">
+      <h2 class="sheet-title" data-i18n="opt.title">選項</h2>
+      <label class="opt-field">
+        <span class="opt-label" data-i18n="opt.inputMethod">輸入法</span>
+        <select id="opt-input-method" class="browser-default">
+          <option value="ISO15919">ISO 15919</option>
+          <option value="KH">Kyoto-Harvard</option>
+        </select>
+      </label>
+      <label class="opt-field">
+        <span class="opt-label" data-i18n="opt.translit">拉丁轉寫</span>
+        <select id="opt-translit" class="browser-default">
+          <option value="ISO15919">ISO 15919</option>
+          <option value="IAST">IAST</option>
+        </select>
+      </label>
+      <div class="switch opt-switch">
+        <label>
+          <input type="checkbox" id="opt-ignore-spaces" />
+          <span class="lever"></span>
+          <span data-i18n="opt.ignoreSpaces">忽略空格與連字號</span>
+        </label>
+      </div>
+      <p class="hint" data-i18n-html="input.hint"></p>
+      <p class="credit" data-i18n-html="footer.credit"></p>
+    </div>
+    <div class="modal-footer">
+      <a href="#!" class="modal-close btn-flat" data-i18n="opt.done">完成</a>
+    </div>
+  </div>
+
+  <!-- 紀錄・JSON 輸出：Materialize bottom-sheet ＋ modal-fixed-footer（捲動的是 .modal-content，底列固定）。
+       一筆紀錄＝標題＋當時的輸入＋選項；**標題可以重複、可以留空**（同一部咒語分好幾段記）。
+       ⚠️ 標題欄放在最上面：iOS 鍵盤彈出時不縮 layout viewport，bottom-sheet 的下半截會被鍵盤蓋住，上緣不會。
+       ⚠️ 沒有 window.confirm（Artifacts 的 iframe 裡它直接回 false）——取代／刪除／清除都是「再按一次」。 -->
+  <div id="records-modal" class="modal bottom-sheet modal-fixed-footer records-sheet">
+    <div class="modal-content">
+      <h2 class="sheet-title" data-i18n="rec.title">紀錄・JSON 輸出</h2>
+      <!-- 外層是 div 不是 label：清除鈕放在 label 裡的話，按它會連帶觸發 label 的預設動作（聚焦標題欄＝鍵盤彈出來） -->
+      <div class="opt-field">
+        <label class="opt-label" for="rec-title" data-i18n="rec.titleLabel">標題（可留空、可重複）</label>
+        <div class="rec-title-row">
+          <input type="text" id="rec-title" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false"
+            data-i18n-placeholder="rec.titlePlaceholder" placeholder="例如：百字明" />
+          <a href="#!" id="rec-title-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearTitle" title="清除標題">
+            <i class="material-icons">clear</i>
+          </a>
+        </div>
+      </div>
+      <div class="rec-current">
+        <div class="rec-current-body">
+          <span class="opt-label" data-i18n="rec.current">目前的輸入</span>
+          <div id="rec-current" class="rec-current-text"></div>
+        </div>
+        <a href="#!" id="rec-add" class="btn-flat rec-add">
+          <i class="material-icons left">playlist_add</i><span data-i18n="rec.add">加入清單</span>
+        </a>
+      </div>
+      <p id="rec-storage-note" class="rec-note rec-warn" hidden data-i18n="rec.storageFail">這支瀏覽器記不住清單。</p>
+
+      <div class="rec-heading">
+        <h3 id="rec-list-title">清單</h3>
+        <a href="#!" id="rec-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearAll" title="全部清除">
+          <i class="material-icons">delete_sweep</i>
+        </a>
+      </div>
+      <ol id="rec-list" class="rec-list"></ol>
+
+      <div class="rec-heading"><h3>JSON</h3></div>
+      <pre id="rec-json" class="rec-json mono"></pre>
+      <!-- 清單現在存在哪裡（這支瀏覽器／artifact 的資料庫／連不上）：文字由 tibetan-siddham-mobile.js 的 renderRecNote 依狀態填 -->
+      <p id="rec-note" class="rec-note"></p>
+    </div>
+    <div class="modal-footer">
+      <a href="#!" id="rec-copy" class="btn-flat"><i class="material-icons left">content_copy</i><span data-i18n="rec.copyJson">複製 JSON</span></a>
+      <a href="#!" id="rec-download" class="btn-flat"><i class="material-icons left">file_download</i><span data-i18n="rec.download">下載</span></a>
+      <a href="#!" class="modal-close btn-flat" data-i18n="opt.done">完成</a>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  <script src="./i18n.js"></script>
+  <script src="./locales/zh-Hant.js"></script>
+  <script src="./locales/en.js"></script>
+  <script src="./locales/ja.js"></script>
+  <script src="./side-tool.js"></script>
+  <script src="./tibetan-siddham-mobile-lib.js"></script>
+  <!-- 控制器是 ESM：它 import tibetan-siddham-converter.js（藏文核心與 vendored 引擎都是純 ESM，同 tibetan-siddham 的偏離理由） -->
+  <script type="module" src="./tibetan-siddham-mobile.js"></script>
+</body>
+</html>

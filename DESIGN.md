@@ -1,0 +1,221 @@
+# tibetan-siddham-mobile — 設計決議
+
+> 版本 v1.0｜2026-10-12
+
+「怎麼用」在 README，「為什麼長這樣」在這裡。家族共同規範（結構／i18n／主題／側鍵）只標引用、不重複：
+[DESIGN_GUIDELINES](https://github.com/scottgfhong310/nodeapp-webapp-family/blob/main/DESIGN_GUIDELINES.md)。
+
+⭐ **這支 app 的手機版型、鍵盤處理、紀錄清單與 Artifacts 資料庫，全部是照 [`bonji-mobile`](https://github.com/scottgfhong310/bonji-mobile) 移植的**
+——那些決定是 owner 在 iPhone 上一項一項試出來的，來龍去脈寫在 `bonji-mobile/DESIGN.md`（本文以「bm §n」引用）。
+這裡只記**與它不同的地方**，以及在這支 app 上重新量過、驗過的東西。
+
+---
+
+## 1. 這支 app 為什麼存在
+
+[`tibetan-siddham`](https://github.com/scottgfhong310/tibetan-siddham) 是左輸入／右輸出的兩欄版面，在手機上兩欄疊成一欄，
+輸入與輸出之間夾著提示、範例與選項——**打字的時候看不到輸出**。`bonji` 有同一個問題，`bonji-mobile` 是它的解法（bm §1）。
+
+owner 2026-10-12：「參考 `bonji-mobile` 的做法，在 `tibetan-siddham` 也增加一個在手機上使用的 App。」
+
+**這支 app 只解決一件事：輸入的同時看得到藏文輸出，不必捲動。**
+
+### 1.1 三個由 owner 決定的事〔2026-10-12〕
+
+| 問題 | 決定 |
+|---|---|
+| 範圍 | **完整比照 bonji-mobile**：即時轉換＋記號列＋草稿＋紀錄清單・JSON 輸出；Artifacts 版的清單存資料庫，並比照加每日備份 |
+| 版型 | **藏文｜右欄拉丁，不處理悉曇**——「藏文悉曇的組字，與悉曇組字並不是完全一致對應，有悉曇反而會造成混淆」 |
+| 發佈 | 全套：GitHub（public）＋ Claude Artifacts（private）＋ InProgress 鏡像＋家族登記 |
+
+形制（新 repo、零後端、轉換核心是上游的複製件）照 bonji-mobile 當時的決定（bm §1.1），沒有另外再問。
+repo 名稱保留 `siddham`：它是「`tibetan-siddham` 的手機版」，名字記的是血緣，不是功能。
+
+---
+
+## 2. 版型：藏文｜拉丁 2:1 並排、輸入貼底、整頁不捲
+
+```
+┌──────────────────────┐
+│ 頁首（鍵盤開著時收起）        │
+│ ┌────────────┐┌────────┐ │ ← 各自捲動；文字靠底
+│ │            ││        │ │
+│ │  ཨོཾ་ཨཱཿ་ཧཱུྃ།   ││ oṃ āḥ │ │
+│ │藏文梵字 ＋ ⧉││拉丁  ⧉ │ │ ← 標籤＋複製鈕在欄位底部
+│ └────────────┘└────────┘ │
+├──────────────────────┤
+│ 記號列（藏文字形，五組，§6）   │
+│ 輸入框 ×  [母音]            │
+└──────────────────────┘
+        系統鍵盤
+```
+
+與 bonji-mobile 逐項相同（bm §2）：輸出在上、輸入在下；兩欄 2:1 寫進 `flex-basis`；文字靠底（`margin-top:auto`）；
+標籤與複製鈕在欄位底部；整頁不捲；輸入框最多長到外殼的 30%；鍵盤開著時頁首收起。差別只有左欄是藏文。
+
+### 2.1 不處理悉曇〔owner 2026-10-12〕
+
+`tibetan-siddham` 桌機版有四種輸出（藏文／悉曇／拉丁／碼位）。手機版**只留藏文與拉丁**：
+
+- 畫面沒有悉曇欄；紀錄清單的每一筆只畫藏文；**JSON 輸出也沒有悉曇**（`output` ＝ `{ tibetan, latin, codepoints }`，碼位是藏文那一欄的）。
+- 理由是 owner 的原話（§1.1）：兩種文字的組字不是一一對應，並排會讓人拿悉曇去對藏文的疊字，反而混淆。**要悉曇用 bonji-mobile。**
+- ⚠️ 防腐層是上游的 byte-identical 複製件，**照樣會算出悉曇那一欄**——本 app 只是不讀它（控制器裡沒有任何一處 `.siddham`，第 ㉕ 條）。
+  不為了「用不到」去改複製件：改了就與上游分岔。
+- ⚠️ **仍然隨附 Noto Sans Siddham，只為一個字**：`~` 與 `--` 在藏文欄轉出 `𑗁`（U+115C1，上游的標點政策借用的悉曇記號），藏文字型沒有它。
+  那不是「輸出悉曇」，是藏文欄的一個標點。
+
+### 2.2 窄欄的標籤
+
+拉丁欄約 114px 寬（375px 時）。英文標籤 `Transliteration` 加複製鈕放不下 ⇒ 標籤可以縮（`min-width:0`＋省略號），不壓到鈕。
+中、日文的標籤短，不受影響。
+
+---
+
+## 3. 鍵盤：外殼貼齊 visualViewport
+
+整段照 bonji-mobile（bm §3、§3.2）：外殼 `position:fixed`，`top`／`height` 由 `fitShell()` 依 `visualViewport` 寫入；
+「鍵盤開著」的判準是可見高度比基準少 ≥ 120px；Claude App 裡 iframe 不縮、整頁被往上推，所以底部安全區以**焦點**判斷；toast 在上方。
+
+### 3.1 證據分級（這支 app 自己的）
+
+| 驗了什麼 | 怎麼驗的 | 證明到哪裡 |
+|---|---|---|
+| 375×812：版面、五組記號列、兩欄 2:1（229／114＝2.009）、整頁不捲 | preview 實跑＋量 `getBoundingClientRect` | 版型 |
+| 375×430（＝Android 鍵盤彈出時的行為）：不溢出、輸入框封頂在 30%、輸出捲到底 | preview `resize_window` | `fitShell` 的 innerHeight 路徑 |
+| 按記號鍵不讓輸入框失焦；聚焦時外殼不墊底部安全區 | preview **真的點擊**（`focusout` 事件 0 次；`padding-bottom` 0px） | 桌機瀏覽器上成立，**不是真機** |
+| iOS 的 `offsetTop` 路徑 | 只有 `shellBox()` 的單元測試（第 ⑤ 條） | 算式對，不證明 Safari 真的那樣報值 |
+| **真的在 iPhone／Android 上打字**（含 Claude App 裡的 Artifacts 版） | **尚未**——要 owner 實測 | — |
+
+bonji-mobile 的同一套版型在 owner 的 iPhone Claude App 上確認過（bm §3.2）；那是**那一支**的證據，這一支換了字型、鍵高與記號列，要另外看。
+
+---
+
+## 4. 轉換核心：tibetan-siddham 的複製件
+
+- `tibetan-siddham-converter.js`（防腐層）、`tibetan-core.js`（藏文規則核心）、`data/tibetan.tsv`（規則表）、`vendor/bonji-input/`（引擎）、
+  `data/assist.json`（記號列的鍵）與兩支字型，都是 **`tibetan-siddham` 的 byte-identical 複製件**，權威版在那邊。
+  **改就改 `tibetan-siddham` 再同步**；`verify.js` 第 ⑱ 條每次比 md5（上游不在旁邊時 SKIP，SKIP 不是 PASS）。
+- ⚠️ **引擎從 `tibetan-siddham` 複製，不是從 `bonji`**：兩份不同（這一份多 14 個符號記法，見 `vendor/bonji-input/SOURCE.md`），
+  而防腐層的符號分流是對著這一份寫的。bonji-mobile 的規矩正好相反（它從 bonji 抄）——**各抄各的上游**。
+- **比 bonji-mobile 多一步：對照表要先載**。藏文核心在第一次轉換前 `fetch` `data/tibetan.tsv`（以 `import.meta.url` 的相對路徑）。
+  控制器在 `init` 末尾 `converter.ready()`，回來之前 `convert()` 不轉、紀錄清單顯示「載入中」（否則每一筆都是「轉換失敗」）；
+  回來之後補轉一次。**載不到要講**：原因寫在藏文欄裡並跳一則 toast——空著的輸出欄與「這段記法轉不出任何字」長得一樣。
+  實測（把 TSV 暫時拿掉再重新載入）：藏文欄出現紅字、清單每一筆寫出原因、「加入清單」仍可用（輸入本身是資料）。第 ㉖ 條。
+- 對照表是模組層共用的：`ready()` 載過一次，之後每一個 `new TibetanSiddhamConverter(options)` 都能轉——紀錄清單就是這樣讓每一筆用自己的選項現算。
+- 原生 ESM 的偏離同上游：控制器以 `<script type="module">` 載入；`tibetan-siddham-mobile-lib.js` 仍是 IIFE → `window.TibetanSiddhamMobileLib`。
+
+---
+
+## 5. 刻意不帶的功能
+
+| tibetan-siddham 有的 | 為什麼不帶 |
+|---|---|
+| 悉曇輸出 | owner 決定（§2.1） |
+| Unicode 碼位欄 | 第一屏放不下；碼位仍在 JSON 輸出裡（`output.codepoints`） |
+| 輔助輸入面板（右側 dock、搜尋、分類 chips） | 同一份資料改以**記號列**呈現（§6）；手機上沒有地方放 dock |
+| 字元對照表頁（`chart.html`） | 記號列＋說明取代；要查完整對照用桌機版 |
+| 存到伺服器的匯出檔與清單（`/api/tibetan-siddham/*`） | 需要後端；本 app 零後端。改成瀏覽器裡的紀錄清單＋JSON 輸出（§8） |
+
+---
+
+## 6. 記號列（母音 → 子音 → 元音符號 → 下加輔音 → 標點）
+
+- **資料是上游輔助輸入面板的那一份**（`data/assist.json`，複製件）：五類 16／34／16／37／5，共 **108** 格。
+  lib 的 `keysFromAssist()` 把一類變成一組鍵：`ins`（插入的記法）、`glyph`（藏文字形，組合字元前面加資料指定的載體點圈）、`label`（鍵上印的字）。
+- **順序照資料**（＝桌機版面板的順序）。lib 寫死的只有 `KEYSET_IDS`——收哪幾類、依什麼順序；assist.json 多一類或換了順序而這裡沒跟上，第 ㉔ 條會紅。
+  ⚠️ bonji-mobile 的順序是 owner 用過之後逐項指定的；這一支的順序**還沒有經過那一步**，要調只改 `KEYSET_IDS` 一行（與第 ㉔ 條的期望值）。
+- **每一鍵都對轉換器驗過**（第 ② 條）：把記法真的餵給防腐層，藏文輸出要等於鍵上的字形，ISO 15919 與 Kyoto-Harvard 各一次（有記法的 105 鍵 × 2 ＝ 210 次比對）。
+  兩種輸入法同字，所以記號列只要一套；記法**照資料原樣插入、不轉小寫**（bonji-mobile 轉小寫是因為它的來源有一格大寫 `S`，這裡沒有）。
+- ⚠️ **子音鍵帶隱含 a**（`ka`）：再按元音符號 `i` 是 `kai`（ཀཻ）。要接母音用**下加輔音**那一組（`k`＋`i`＝ཀི）——音節開頭的 `k` 照樣畫成全形。
+  與上游、bonji 同一個慣例；記號列只插入記法，不替使用者改寫前一個字。說明文字裡有這一句。
+- **沒有記法的三格**（下加輔音裡的固定形 U+0FBA／0FBB／0FBC）：轉換器打不出來，留著是為了辨認——鍵畫淡、按了只出提示、不插入（第 ③ 條）。
+- **tsheg 鍵插入的是兩個空格**，鍵上印 `␣␣`。⚠️ 這顆鍵在 iPhone 上有額外的用處：iOS 的「"." 快速鍵」會把連按兩下空白鍵改成句號
+  （關了 autocorrect 也擋不住；owner 2026-10-11 在 bonji-mobile 上遇過、已從鍵盤設定關掉）——用鍵插入不經過那條路。
+  三個空格（＝全形空格）沒有鍵：assist.json 沒有那一格，要加得加在上游。
+- 讀不到 assist.json 時記號列上直接講（`keybar.loadFail`）。按鍵擋 `mousedown`、不擋 `touchstart`（bm §6）。
+
+### 6.1 鍵的大小是量出來的〔2026-10-12〕
+
+藏文字形上下都比悉曇高。以 Noto Serif Tibetan 逐格量墨水（canvas `measureText`，單位 em）：
+
+| 組 | 基線以上最多 | 基線以下最多 |
+|---|---|---|
+| 母音 | 1.11（ཨཽ） | 0.48 |
+| 子音 | 0.85 | 0.51 |
+| 元音符號 | 1.11 | 0.77（◌ཹ） |
+| 下加輔音 | 0.61 | 0.68 |
+| 標點 | 0.80 | 0.47 |
+
+字型自己的內容區更高（上 1.47／下 1.35，共 2.82em）。bonji-mobile 的 46px 鍵、字形行高 1.1 套在這裡，**上方符號會被記號列裁掉**（第一版實測，截圖可見 ཨི 的 i 被切）。
+⇒ 鍵高 **54px**、字形 **18px × 行高 2**（36px 的字形框，基線在框頂下方 1.06em）、記法一行 13px。兩者都用 px（Materialize 依螢幕寬度改根字級）。
+記號列 `overflow-y:hidden`——字形的內容區比行盒高，不可以讓記號列自己上下捲。第 ㉗ 條盯著這幾個數字的關係。
+
+### 6.2 隨附的字型要畫得出每一鍵
+
+第 ㊱ 條直接讀字型檔的 cmap（TTF 的 format 4／12、woff2 先解 brotli）：108 鍵的每一個碼位（含載體 U+25CC）都在 Noto Serif Tibetan 裡，
+唯一借用的 U+115C1 在 Noto Sans Siddham 裡。**不看畫面**——Mac 上系統自己有藏文與悉曇字型，隨附的缺字時後備會接走，看不出來；手機上是另一回事（bm §6）。
+
+---
+
+## 7. 輸出欄的行高也是量出來的
+
+輸出欄的藏文 2rem、**行高 2.1**、留底 `.5em`：
+
+- 疊字的墨水：一般的字基線下 0.5em，三四層的疊字 1.0–1.15em（སྶྠཱུ／ཀྵྨྱཱུ）；上方最多 1.17em（ཨོཾ）。
+  行高 2.1 ⇒ 基線落在行盒頂端下方 1.11em、底下留 0.99em，一般的疊字不會撞到下一行的上方符號。（桌機版是 1.6；手機上字比較小、行比較短，寧可鬆一點。）
+- 留底 `.5em`：字型的內容區（2.82em）比行高大，最後一行會溢出行盒 0.36em——不留的話，**內容只有一行也冒出一條捲軸**（第一版實測溢出 4px）。
+- 說明文字裡的藏文標點與 `𑗁` 以 `.tib` 包著、用隨附的字型畫，不靠系統後備。
+
+---
+
+## 8. 草稿、紀錄清單與 JSON 輸出
+
+整段照 bonji-mobile（bm §8、§10）——一筆紀錄＝標題＋當時的輸入＋當時的選項；**標題不是鍵**（可以重複、可以留空，同名各段以 `part` 分開）；
+輸出不落地、每一筆用自己的選項現算；標題與清單**分兩格存**、改標題的路上沒有任何一行寫清單；會毀掉東西的動作「再按一次」、不用 `confirm()`；
+加入鈕在藏文欄底部、不收鍵盤。那些規矩各自對應一次真的事故或一次真機實測，**理由在 bm §10–§10.4，不要當成可以簡化的東西**。
+
+與 bonji-mobile 不同的只有：
+
+- `output` 是 `{ tibetan, latin, codepoints }`（§2.1）；沒有 `ascii`（上游的防腐層不回傳正規化後的記法）。
+- 清單上記法那一行以 `white-space:pre` 顯示、換行畫成 `↵`：**連續空格是記法**（兩個＝tsheg、三個＝全形空格），收成一個就看不出這一筆打了什麼。
+- 對照表載好之前清單顯示「載入中」（§4）。
+- localStorage 的鍵是 `tibetan-siddham-mobile-*`，與 bonji-mobile 互不相干（Artifacts 上兩支本來就是不同的來源）。
+
+## 9. Artifacts 版
+
+<https://claude.ai/artifact/9jxT8XXBY9wF2wyt67qXv7>（private）。由 `python3 artifact/build.py` 組出，差異三處（同 bm §9）：
+`materialize.min.css` 自己託管、JSON 下載走 `downloads` capability、紀錄清單存 artifact 的資料庫（`db` capability，`artifact/src/remote-db.js`，**一筆一份文件**）。
+
+與 bonji-mobile 不同的兩點：
+
+- **沒有 CBETA 字形的 SVG**：記號列的鍵全是隨附的 Noto 畫的，所以沒有「不進 GitHub、只隨 Artifacts」的那一塊，GitHub 那一份與 Artifacts 那一份的鍵長得一樣。
+- ⚠️ **`data/tibetan.tsv` 要以 `text/plain` 發佈**：Artifacts 只送它認得的副檔名，`.tsv` 不在清單上（首次發佈被退回、什麼都沒發出去）。
+  藏文核心只把它當文字讀，型別不影響。沒有副檔名的 `vendor/bonji-input/LICENSE` 同理。
+  ⇒ `build.py` 把發佈時要給的 `files` 對照寫成 `artifact/dist.files.json`，不靠每次重新想。
+
+**資料庫**：規則是只有 artifact 的 owner 讀寫。發佈後驗過一次（寫一筆探針 → owner 讀得到、以 admin 層級讀不到 → 刪掉）。
+**備份**比照 bonji-mobile：`scripts/backup-artifact.sh`（每日排程 `tibetan-siddham-mobile-artifact-backup`，21:20 前後；每次發佈前也跑一次），
+本機在 `/Users/Shared/nodeapp-db-backup/tibetan-siddham-mobile-artifact/`。腳本的五種情況由第 ㉟ 條在暫存資料夾裡真的跑。
+
+### 9.1 證據分級
+
+| 驗了什麼 | 怎麼驗的 |
+|---|---|
+| 建置：三處補丁各命中一次、只有兩支 Noto、資料檔都在 | `build.py` 自己的檢查 |
+| 發佈出去的 24 個檔、宣告的 capabilities | 發佈後列檔案清單（`data/tibetan.tsv` 是 `text/plain`） |
+| 資料庫的規則 | 探針：owner 讀得到、admin 層級讀不到；探針已刪 |
+| 備份腳本對著真的資料庫 | 清單是空的那一次：exit 0、不寫新檔、`backup.log` 有一行 |
+| **Artifacts 頁面真的跑起來**（對照表以 `text/plain` 載入、TTF 字型、紀錄存進資料庫） | **尚未**——這個 session 的瀏覽器沒有登入 claude.ai，看不到那一頁；要 owner 開一次 |
+| **iPhone 的 Claude App**：鍵盤、記號列的字形、清單關掉重開還在 | **尚未**——要 owner 實測 |
+
+## 10. 刻意沒做的
+
+- **三個空格的鍵**、**調整記號列順序**：見 §6。
+- **匯入 JSON、調整紀錄順序**：同 bm §10.2。
+- **把藏文字型轉成 woff2**：上游就是 TTF（736 KB），本 app 的字型是它的 byte-identical 複製件；要轉得在上游轉。
+
+## 11. 移植時看到、但不在本 app 處理的事
+
+- **`.ni` 轉出的是懸空的下加字**：`.n` 在規則表裡對到下加形（U+0F9E，上游註記是 user mapping），所以 `ma  .ni` 的藏文是 མ་ྞི——ྞ 底下沒有基字。
+  全形的 ཎ 要打 `.na`（帶 a）；大寫別名 `N` 在 ISO 15919 輸入法下會先被轉成小寫 `n`。`.t`／`c`／`ch`／`j` 同一個情況。
+  那是 `tibetan-siddham` 規則表的現況（**是不是刻意的要 owner 判斷**），本 app 是複製件、不改；範例 chips 因此避開了 `.ni`。

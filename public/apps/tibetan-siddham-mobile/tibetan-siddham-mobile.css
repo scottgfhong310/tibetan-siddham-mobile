@@ -1,0 +1,757 @@
+/* tibetan-siddham-mobile — 頁面樣式：主題 token（light/dark）＋ 手機優先的單畫面版型。
+ * Materialize 元件的深色由共用 materialize-dark.css 處理；側鍵樣式見 side-tool.css。
+ *
+ * 版型的一條原則：**整頁不捲，只有輸出區自己捲。** 外殼 .shell 的 top／height 由
+ * tibetan-siddham-mobile.js 依 visualViewport 寫進 --shell-top／--shell-h（鍵盤彈出後就是扣掉鍵盤的那一塊），
+ * 輸入貼底 ⇒ 永遠貼著鍵盤，輸出吃掉剩下的高度。
+ */
+
+/* ===== 字型（隨 app 內嵌，SIL OFL；tibetan-siddham 的複製件）=====
+ * 藏文：Noto Serif Tibetan。⚠️ 是 TTF（上游就是 TTF——那邊沒有 woff2 轉檔工具；本 app 的字型是它的 byte-identical 複製件）。
+ * Noto Sans Siddham 只為一個字帶著：`~`／`--` 在藏文欄轉出 𑗁（U+115C1，借用的悉曇記號），藏文字型沒有它。
+ * ⚠️ **不寫任何 local()**：iOS 的網頁讀不到使用者自己裝的字型（WebKit 防指紋），寫了也只是在桌機上碰巧命中。 */
+@font-face {
+  font-family: 'Noto Serif Tibetan';
+  src: url('./fonts/NotoSerifTibetan-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans Siddham';
+  src: url('./fonts/NotoSansSiddham-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ===== 主題變數（light / dark 由 <html data-theme> 切換；值同 bonji-mobile） ===== */
+:root,
+[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #161a22;
+  --surface-2: #1b2030;
+  --text: #e8eaf0;
+  --muted: #a8b0c0;
+  --border: rgba(255, 255, 255, 0.12);
+  --accent: #90caf9;
+  --card-bg: #0f1115;
+  --tool-bg: #1b2030;
+  --tool-fg: #e8eaf0;
+  --overlay: rgba(10, 14, 22, 0.84);
+  --drop-border: #3a4252;
+  --danger: #ff6e6e;
+}
+
+[data-theme="light"] {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --text: #1f2328;
+  --muted: #57606a;
+  --border: rgba(0, 0, 0, 0.12);
+  --accent: #0969da;
+  --card-bg: #ffffff;
+  --tool-bg: #ffffff;
+  --tool-fg: #1f2328;
+  --overlay: rgba(240, 243, 247, 0.86);
+  --drop-border: #c4ccd6;
+  --danger: #d93636;
+}
+
+:root {
+  /* 會拿到焦點的控制項字級。⚠️ 不可小於 16px，否則 iOS 聚焦時自動放大整頁；
+   * 取 20px 是因為 Artifacts 版會被宿主等比縮小，16px 落地後小於 16 照樣放大
+   * （家族 memory artifact-runtime-gotchas 第 3 條，20px 實測可行）。 */
+  --ctl-font: 20px;
+  --tibetan-font: 'Noto Serif Tibetan', 'Noto Sans Siddham', serif;
+  --mono-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;             /* 整頁不捲：捲的只有 .out-value */
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  transition: background .2s ease, color .2s ease;
+}
+
+.mono { font-family: var(--mono-font); }
+
+/* ===== 外殼 ===== */
+.shell {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--shell-top, 0px);
+  height: var(--shell-h, 100dvh);
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  /* ⚠️ 上緣安全區由外殼墊、**不是頁首**〔bonji-mobile，owner 2026-10-08，Claude App 實測〕：
+   *    Claude App 裡 artifact 的 safe-area-inset-top ≈ 一整個瀏海（iPhone 約 59px），
+   *    而 App 自己的標題列就疊在那一塊上。原本寫在 .topbar 的 padding-top、又配 height:48px
+   *    ＋ border-box ⇒ 墊高被**吃進那 48px 裡**，標題只往下移一半、約 75% 仍在 App 標題列底下。
+   *    外殼本身是 position:fixed，Artifacts 骨架給 :root 的那份 padding 碰不到它，所以要自己墊。
+   *    鍵盤開著時照樣墊（App 的標題列還在）。 */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+}
+
+/* 鍵盤開著時：底部安全區由鍵盤蓋掉了、頁首收起把高度讓給輸出 */
+body.kb-open .shell { padding-bottom: 0; }
+/* ⚠️ 輸入框有焦點＝鍵盤開著（觸控裝置）⇒ 底部安全區不墊〔bonji-mobile，owner 2026-10-08，Claude App 實測〕：
+ *    App 裡鍵盤彈出時 **iframe 不縮、而是整頁被往上推**，visualViewport 看不到變化，kb-open 判斷不成立
+ *    ⇒ 輸入列與鍵盤之間留著約 34pt 的安全區（截圖量到 32pt）。改以焦點判斷，不靠高度。
+ *    桌機上 safe-area-inset-bottom 本來就是 0，這條是 no-op。 */
+.shell:has(#tsm-input:focus) { padding-bottom: 0; }
+body.kb-open .topbar { display: none; }
+
+/* ===== 頁首 ===== */
+.topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 48px;
+  padding: 0 4px 0 16px;
+  box-sizing: border-box;
+}
+
+.topbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 48px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;                  /* 觸控目標 */
+  height: 44px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.topbar-btn:hover { color: var(--accent); background: var(--surface-2); }
+.topbar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+.topbar-btn.active { color: var(--accent); }
+
+/* 紀錄鈕上的筆數（0 筆時 hidden） */
+.topbar-btn { position: relative; }
+.topbar-btn .rec-badge {
+  position: absolute;
+  top: 4px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ===== 輸出區 ===== */
+/* 藏文與拉丁轉寫**左右並排、寬 2:1**（形制照 bonji-mobile，owner 2026-10-08 在那邊定的）：Claude App 裡鍵盤彈出時頁面被往上推，
+ * 輸出區的上半截會落到 App 標題列底下——上下排的話上面那一塊整塊看不見（那邊的截圖實況），並排則兩欄都露出下半截。
+ * **沒有悉曇欄**〔owner 2026-10-12〕：藏文梵字的組字與悉曇的組字並不是一一對應，並排反而造成混淆。 */
+.out-pane {
+  flex: 1 1 auto;
+  min-height: 0;                /* 讓子項可以縮到比內容小（否則 flex 子項的下限是內容高） */
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  padding: 4px 12px 8px;
+}
+
+.out-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 12px 2px;
+  box-sizing: border-box;
+}
+/* 2:1 寫進 flex-basis（不寫成 2:1 的 grow）：兩塊的內距與框線相同，grow 只分剩下的寬度，
+ * 外框比例就不是那兩個數字（實算 375px 寬時 grow 2:1 ＝ 1.78:1）。8px ＝ .out-pane 的 gap。 */
+.out-block { min-width: 0; }
+.out-block-tibetan { flex: 0 0 calc((100% - 8px) * 2 / 3); }
+.out-block-latin { flex: 1 1 0; }
+
+/* 標籤＋複製鈕在欄位底部（理由見 index.html）：頂端那一截在 Claude App 裡鍵盤開著時被 App 標題列蓋住。
+ * 上緣一條細線與文字分開——文字靠底，否則最後一行會貼著標籤讀成同一段。 */
+.out-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+.out-label {
+  color: var(--muted);
+  font-size: .8rem;
+  /* 窄的那一欄（拉丁，約 114px）放不下長的標籤＋複製鈕（en 的 Transliteration）⇒ 標籤讓出寬度，不壓到鈕 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.out-value {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+/* 文字靠底：短的時候貼著記號列（頁面被往上推時，上緣那一截可能看不到）；長的時候照常捲動。
+ * ⚠️ 用 margin-top:auto 而不是 justify-content:flex-end——後者在捲動容器裡會讓溢出的上半截捲不上去。 */
+.out-text {
+  margin-top: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 藏文的行高與留底都是量出來的〔2026-10-12，Noto Serif Tibetan，以 em 計〕：
+ *   墨水：基線以上最多 1.17（ཨོཾ）、以下一般 0.5、三四層的疊字 1.0–1.15（སྶྠཱུ／ཀྵྨྱཱུ）；
+ *   字型自己的內容區高 2.82（上 1.47／下 1.35）——比行高大，所以每一行的內容區都會**溢出行盒**上下各 (2.82 − 行高) ÷ 2。
+ * 行高 2.1 ⇒ 基線落在行盒頂端下方 1.11、底下留 0.99：一般的疊字不會撞到下一行的上方符號。
+ * 留底 .5em ⇒ 吸收最後一行的內容區溢出（.36em）；不留的話內容很短也冒出一條捲軸（實測溢出 4px）。 */
+.tibetan-text {
+  font-family: var(--tibetan-font);
+  font-size: 2rem;
+  line-height: 2.1;
+  padding-bottom: .5em;
+}
+/* 藏文對照表載不到時，原因寫在藏文欄裡（控制器的 convert）——那是一句話，不是藏文 */
+.out-text.out-error {
+  font-family: inherit;
+  font-size: .9rem;
+  line-height: 1.6;
+  color: var(--danger);
+}
+
+.latin-text {
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.out-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color .15s, background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.out-copy:hover { color: var(--accent); background: var(--surface-2); }
+.out-copy i { font-size: 18px; }
+/* 加入紀錄清單（藏文欄底部，複製鈕左邊）：auto margin 把兩顆鈕一起推到右邊、標籤留在左邊 */
+.out-add { margin-left: auto; }
+.out-add i { font-size: 20px; }
+
+/* 空狀態：輸入是空的時候取代兩塊輸出 */
+.empty-state { display: none; padding: 8px 4px; }
+body.is-empty .out-block { display: none; }
+body.is-empty .empty-state { display: block; }
+
+.hint {
+  font-size: .9rem;
+  color: var(--muted);
+  line-height: 1.7;
+  margin: 0 0 12px;
+}
+.hint code,
+code {
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 1px 6px;
+  border-radius: 4px;
+  /* 說明裡有藏文標點與 𑗁：等寬字型沒有它們 ⇒ 接上隨附的那兩支，不靠系統後備（手機上不一定有） */
+  font-family: var(--mono-font), 'Noto Serif Tibetan', 'Noto Sans Siddham';
+  font-size: .85em;
+}
+
+/* 說明裡的藏文標點與 𑗁（locales 的 input.hint 以 .tib 包著）：用隨附的字型畫，不靠系統後備 */
+.hint .tib { font-family: var(--tibetan-font); font-size: 1.15em; line-height: 1; }
+
+.examples {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.examples-label { color: var(--muted); font-size: .85rem; }
+/* white-space:pre——範例裡的兩個空格是記法（＝ tsheg），不可以被排版收成一個 */
+.examples .chip { margin: 0; font-family: var(--mono-font); cursor: pointer; white-space: pre; }
+
+/* ===== 記號列 ===== */
+.keybar {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;           /* 藏文字形的內容區比行盒高（見 .tibetan-text 的說明），不可以讓記號列自己上下捲 */
+  padding: 6px 8px;
+  scrollbar-width: none;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.keybar::-webkit-scrollbar { display: none; }
+
+/* 裸 <button>：Materialize 會對它套 teal 的互動底（DESIGN_GUIDELINES §5.1 gotcha）⇒ 三態都自己給 */
+.keybar .key {
+  flex: none;
+  min-width: 46px;
+  height: 54px;                 /* bonji-mobile 是 46px；藏文字形上下都比悉曇高（見 .key-glyph），量過才加高 */
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;   /* 不等雙擊縮放的判定，連按才跟得上 */
+  -webkit-tap-highlight-color: transparent;
+}
+.keybar .key:hover,
+.keybar .key:focus { background: var(--surface-2); color: var(--text); outline: none; }
+.keybar .key:active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.keybar .key:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.key-glyph {
+  font-family: var(--tibetan-font);
+  /* 以 px 指定（不用 rem）：Materialize 依螢幕寬度改根字級（14／15／16px），鍵高是固定的 px。
+   * 18px × 行高 2 ＝ 36px 的字形框，基線在框頂下方 1.06em：五組 108 格裡墨水最高的（ཨཽ，基線上 1.11em）與最深的
+   * （◌ཹ，基線下 0.77em）都畫得進去〔2026-10-12 逐格量〕。行高 1.25 時上方符號會被記號列裁掉（實測）。 */
+  font-size: 18px;
+  line-height: 2;
+  color: inherit;               /* 裸 span 會被 materialize-dark 的 --mz-text 蓋掉（§5.1 gotcha） */
+}
+/* 沒有記法的格（下加輔音裡的三個固定形）：留著供辨認、按了只出提示 ⇒ 畫淡一點，不裝成可以插入的樣子 */
+.keybar .key-noinput { opacity: .5; }
+.key-ins {
+  font-family: var(--mono-font);
+  font-size: .85rem;
+  line-height: 1.1;
+  color: inherit;
+}
+
+/* ===== 輸入 ===== */
+.in-bar {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 2px 8px 8px;
+  background: var(--surface);
+}
+
+/* 不用 .materialize-textarea：它靠 keyup 長高且 overflow:hidden，滑鼠／長按貼上的內容會被裁掉
+ * （家族 memory materialize-textarea-autoresize-keyup）。高度由 tibetan-siddham-mobile.js 的 autosize 給。 */
+.in-bar .tsm-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 46px;
+  min-height: 46px;
+  max-height: var(--input-max, 30vh);
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono-font);
+  font-size: var(--ctl-font);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  resize: none;
+  overflow-y: auto;
+}
+.in-bar .tsm-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  outline: none;
+}
+
+.in-clear {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 46px;
+  color: var(--muted);
+  border-radius: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+/* 0,2,1：贏過 Materialize 對 a 的預設色 */
+.in-bar .in-clear:hover { color: var(--danger); background: var(--surface-2); }
+
+/* 記號列切換（母音 → 子音 → 元音符號 → 下加輔音 → 標點）：鈕上的字＝記號列現在是哪一組。
+ * 裸 <button> ⇒ Materialize 的 teal 互動底要自己蓋掉（§5.1 gotcha），三態都給。 */
+.in-bar .keyset-toggle {
+  flex: none;
+  min-width: 56px;
+  height: 46px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent);
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.in-bar .keyset-toggle:hover,
+.in-bar .keyset-toggle:focus { background: transparent; color: var(--accent); outline: none; }
+.in-bar .keyset-toggle:active { background: var(--accent); color: var(--bg); }
+.in-bar .keyset-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 記號列讀不到資料時的說明（取代鍵） */
+.keybar .keybar-note { color: var(--muted); font-size: .85rem; align-self: center; padding: 0 4px; }
+
+/* ===== 選項（bottom-sheet） ===== */
+.options-sheet .sheet-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.opt-field {
+  display: block;
+  margin: 0 0 14px;
+}
+.opt-label {
+  display: block;
+  color: var(--muted);
+  font-size: .85rem;
+  margin-bottom: 4px;
+}
+
+/* 原生 select：外觀拉到與 Materialize 欄位一致（形制照 coffee-deposit）。
+ * ⚠️ 0,2,1 贏過 materialize-dark 的 select.browser-default（0,1,1）。 */
+.options-sheet select.browser-default {
+  display: block;
+  width: 100%;
+  height: 48px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 28px 0 4px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--text);
+  font-size: var(--ctl-font);
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23a8b0c0' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
+}
+.options-sheet select.browser-default:focus {
+  border-bottom-color: var(--accent);
+  box-shadow: 0 1px 0 0 var(--accent);
+  outline: none;
+}
+.options-sheet select.browser-default option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.opt-switch { margin: 6px 0 18px; }
+.options-sheet .credit { font-size: .8rem; color: var(--muted); margin: 0; }
+
+/* ===== 紀錄・JSON 輸出（bottom-sheet ＋ modal-fixed-footer） =====
+ * 面板拉高到 88%（Materialize 的 bottom-sheet 上限是 45%、fixed-footer 是 70%）：清單與 JSON 都要有地方放；
+ * 上面留 12% 是 Claude App 的標題列。0,3,0 贏過 Materialize 那兩條（0,2,0）。
+ * ⚠️ 捲動的是 .modal-content（fixed-footer 的形制），底列固定——「完成」與兩顆輸出鈕不必捲到底才按得到。 */
+.modal.bottom-sheet.records-sheet {
+  height: 88%;
+  max-height: 88%;
+}
+.records-sheet.modal-fixed-footer .modal-content {
+  height: calc(100% - 56px - env(safe-area-inset-bottom, 0px));
+  padding: 16px 16px 12px;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+.records-sheet.modal-fixed-footer .modal-footer {
+  height: calc(56px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.records-sheet .modal-footer .btn-flat { padding: 0 10px; }
+.records-sheet .modal-footer .btn-flat i.left { margin-right: 6px; }
+.records-sheet .sheet-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+/* 標題欄：Materialize 原生底線式輸入。⚠️ 字級走 --ctl-font（≥16px，否則 iOS 聚焦時放大整頁；第 ⑩ 條）。
+ * 0,3,1 贏過 Materialize 的 input[type=text]:not(.browser-default)（0,2,1）。 */
+.records-sheet input[type="text"].rec-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--ctl-font);
+  margin: 0;
+}
+/* 標題欄＋清除鈕並排。⚠️ 不替 input 加 padding 塞 icon：Materialize 的 input 是 content-box，會被撐出欄寬 */
+.rec-title-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* 面板裡的 label 不走 Materialize 的浮動 label 樣式（它只對 .input-field 底下的生效），字級與顏色照 .opt-label */
+.records-sheet label.opt-label { color: var(--muted); font-size: .85rem; }
+
+/* 「目前的輸入」＋ 加入鈕 */
+.rec-current {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.rec-current-body { flex: 1 1 auto; min-width: 0; }
+.rec-current-text {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-current-text.tibetan-text { font-size: 1.4rem; line-height: 2.1; padding-bottom: 0; }
+.rec-current-text.is-empty { color: var(--muted); font-size: .9rem; line-height: 2.4; }
+.rec-current .rec-add {
+  flex: none;
+  padding: 0 10px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.rec-current .rec-add.disabled { color: var(--muted); border-color: var(--border); }
+.rec-current .rec-add i.left { margin-right: 6px; }
+
+.rec-note {
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.6;
+  margin: 8px 0 0;
+}
+.rec-note.rec-warn { color: var(--danger); }
+
+.rec-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  margin: 12px 0 0;
+  border-bottom: 1px solid var(--border);
+}
+.rec-heading h3 {
+  margin: 0;
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.rec-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rec-list .rec-empty {
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.7;
+  padding: 10px 0;
+}
+.rec-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+/* 一筆：點它＝載回輸入框。三行——（序號・標題・第幾段）／藏文／輸入的記法 */
+.rec-list .rec-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;                     /* 藏文的上方符號會頂到標題那一行 */
+  padding: 8px 4px 8px 0;
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+.rec-list .rec-main.armed { background: var(--surface-2); }
+.rec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.rec-head .rec-seq {
+  flex: none;
+  min-width: 1.4em;
+  color: var(--muted);
+  font-family: var(--mono-font);
+  font-size: .85rem;
+  text-align: right;
+}
+.rec-head .rec-name {
+  min-width: 0;
+  color: var(--text);
+  font-size: .95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-head .rec-name.is-empty { color: var(--muted); font-weight: 400; }
+/* 「第 n 段」：同一個標題有好幾筆時才出現——標題重複時靠它分得開 */
+.rec-head .rec-part {
+  flex: none;
+  color: var(--accent);
+  font-size: .75rem;
+  line-height: 1.5;
+  padding: 0 7px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+}
+.rec-main .rec-tib {
+  color: var(--text);
+  font-family: var(--tibetan-font);
+  font-size: 1.3rem;
+  line-height: 2.1;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.rec-main .rec-err { color: var(--danger); font-size: .85rem; }
+.rec-main .rec-in {
+  color: var(--muted);
+  font-size: .8rem;
+  white-space: pre;             /* 不是 nowrap：連續空格是記法（控制器已把換行換成 ↵） */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 列上的動作鈕（取代／刪除）與「全部清除」：44px 觸控目標。上膛（再按一次才執行）時反白 */
+.records-sheet .rec-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: var(--muted);
+  border-radius: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+.records-sheet .rec-btn[hidden] { display: none; }
+.records-sheet .rec-btn:hover { color: var(--accent); background: var(--surface-2); }
+.records-sheet .rec-btn.rec-danger:hover { color: var(--danger); }
+.records-sheet .rec-btn.armed,
+.records-sheet .rec-btn.armed:hover { color: var(--bg); background: var(--accent); }
+.records-sheet .rec-btn.rec-danger.armed,
+.records-sheet .rec-btn.rec-danger.armed:hover { color: var(--bg); background: var(--danger); }
+
+.rec-json {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: .8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.rec-json.is-empty { color: var(--muted); font-family: inherit; }
+
+/* ===== toast 一律在上方 =====
+ * Materialize 在窄螢幕把 toast 放底部；iOS 上那是 layout viewport 的底部，**正好在鍵盤後面**，
+ * 而且會蓋住輸入列。改貼外殼上緣（--shell-top 由 fitShell 寫入）。
+ * 同為 #toast-container（1,0,0），本檔較晚載入 ⇒ 蓋過 Materialize 那三個 media query。 */
+#toast-container {
+  top: calc(var(--shell-top, 0px) + env(safe-area-inset-top, 0px) + 8px);
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  min-width: 0;
+  /* ⚠️ left:50% 讓 shrink-to-fit 的可用寬度只剩半個螢幕（375px 時 187px）⇒ 稍長的句子折成三四行、蓋掉半個頁首。
+   *    明講寬度跟著內容走，上限仍是 92%。 */
+  width: max-content;
+  max-width: 92%;
+}
+
+/* ===== 側鍵：手機上預設收起，右上角 ⋮ 叫回來 =====
+ * ⚠️ 「只在手機」只由這裡的 600px 決定（Materialize small 斷點，同 bonji DESIGN §10）：
+ *    ⋮ 在寬螢幕上不出現，body.tools-hidden 也只在這個 media query 裡生效。JS 不判斷寬度。 */
+.tools-toggle { display: none; }
+
+@media (max-width: 600px) {
+  .tools-toggle { display: flex; }
+  body.tools-hidden .side-tools { display: none; }
+}
+
+/* 寬螢幕：外殼讓出側鍵那一條（右 12px ＋ 46px 鍵 ＋ 12px），否則 601–700px 之間兩者重疊 */
+@media (min-width: 601px) {
+  .shell { right: 70px; }
+}

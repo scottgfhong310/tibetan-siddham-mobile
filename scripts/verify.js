@@ -1,0 +1,943 @@
+#!/usr/bin/env node
+/**
+ * verify.js — tibetan-siddham-mobile 的契約檢查。
+ *
+ *   node scripts/verify.js             跑全部檢查（任何一條 FAIL ⇒ exit 1）
+ *   node scripts/verify.js --selftest  反向驗證：在記憶體裡把世界改壞，每一種改壞都必須被抓到
+ *
+ * 檢查的是「這支 app 為什麼存在」的那幾個性質（輸出在上、輸入貼底、鍵盤不收、不放大），
+ * 記號列的每一鍵與轉換器對不對得上，以及複製件與上游逐位元組相同。
+ * 形制照 bonji-mobile 的 scripts/verify.js（條號重新編過——那邊 CBETA 字形的幾條這裡沒有，另多了藏文才有的幾條）。
+ * ⚠️ 上游 repo 不在旁邊時，複製件那條回 SKIP——**SKIP 不是 PASS**，結尾會分開數。
+ * ⚠️ 本檔不寫任何反斜線-u 的跳脫：寫檔工具會把它們換成實體字元（家族 CHANGELOG v2.146）。碼位一律用 String.fromCodePoint(0x…)。
+ */
+'use strict';
+
+// 轉換模組是 ESM 而 package.json 沒有 type:module（app.js 是 CommonJS）
+// ⇒ Node 會印一次 MODULE_TYPELESS_PACKAGE_JSON 警告。那是預期的，不讓它淹掉報表。
+process.removeAllListeners('warning');
+
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const vm = require('vm');
+const zlib = require('zlib');
+const { fileURLToPath, pathToFileURL } = require('url');
+
+const REPO = path.resolve(__dirname, '..');
+const NAME = 'tibetan-siddham-mobile';
+const APP = path.join(REPO, 'public', 'apps', NAME);
+const FAMILY = path.resolve(REPO, '..', 'nodeapp-webapp-family');
+const UPSTREAM = path.resolve(REPO, '..', 'tibetan-siddham', 'public', 'apps', 'tibetan-siddham');
+const FONT_TIBETAN = 'fonts/NotoSerifTibetan-Regular.ttf';
+const FONT_SIDDHAM = 'fonts/NotoSansSiddham-Regular.woff2';
+
+const read = (p) => fs.readFileSync(p, 'utf8');
+const md5 = (p) => crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex');
+const C = String.fromCodePoint;
+const cps = (s) => Array.from(s, (c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' ') || '(空)';
+
+/* ---------- 世界：所有檢查只讀這個物件，selftest 改的也是它 ---------- */
+let ConverterClass = null;
+async function loadConverter() {
+  if (ConverterClass) return ConverterClass;
+  // 藏文核心以 fetch(import.meta.url 的相對路徑) 讀 TSV；Node 的 fetch 不吃 file:// ⇒ 掛一個只讀本機檔的替身
+  globalThis.fetch = async (u) => {
+    const text = fs.readFileSync(fileURLToPath(String(u).split('?')[0]), 'utf8');
+    return { ok: true, status: 200, text: async () => text };
+  };
+  const mod = await import(pathToFileURL(path.join(APP, 'tibetan-siddham-converter.js')));
+  await new mod.TibetanSiddhamConverter().ready();   // 對照表是模組層共用的：載一次，之後每一個實例都能轉
+  ConverterClass = mod.TibetanSiddhamConverter;
+  return ConverterClass;
+}
+
+async function loadWorld() {
+  const w = {
+    html: read(path.join(APP, 'index.html')),
+    css: read(path.join(APP, NAME + '.css')),
+    js: read(path.join(APP, NAME + '.js')),
+    libSrc: read(path.join(APP, NAME + '-lib.js')),
+    assist: JSON.parse(read(path.join(APP, 'data', 'assist.json'))),
+    tsv: read(path.join(APP, 'data', 'tibetan.tsv')),
+    // Artifacts 版才有的檔：紀錄清單的同步、建置、備份
+    remote: read(path.join(REPO, 'artifact', 'src', 'remote-db.js')),
+    build: read(path.join(REPO, 'artifact', 'build.py')),
+    backup: read(path.join(REPO, 'scripts', 'backup-artifact.sh')),
+    fontTibetan: fs.readFileSync(path.join(APP, FONT_TIBETAN)),
+    fontSiddham: fs.readFileSync(path.join(APP, FONT_SIDDHAM)),
+    locales: {}
+  };
+  for (const code of ['zh-Hant', 'en', 'ja']) w.locales[code] = loadLocale(path.join(APP, 'locales', code + '.js'));
+  w.Lib = loadLib(w.libSrc);
+  w.Converter = await loadConverter();
+  // 「哪些記法是記號（接在帶母音的音節之後）」取自規則表，不取自記號列的資料
+  w.signs = new Set(w.tsv.split(/\r?\n/).filter((l) => l.startsWith('sign\t')).map((l) => l.split('\t')[1]));
+  return w;
+}
+
+function loadLocale(file) {
+  let dict = null;
+  vm.runInNewContext(read(file), { I18n: { register: (c, d) => { dict = d; } } });
+  return dict;
+}
+
+function loadLib(src) {
+  const sandbox = {};
+  sandbox.window = sandbox;
+  vm.runInNewContext(src, sandbox);
+  return sandbox.TibetanSiddhamMobileLib;
+}
+
+// 去掉註解的原始碼（CSS／JS 的區塊註解；JS 另去掉整行的 // 註解）
+const noBlockComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '');
+const jsCode = (s) => noBlockComments(s).replace(/^\s*\/\/.*$/gm, '');
+
+/* ---------- 檢查 ---------- */
+const CHECKS = [];
+const check = (name, fn) => CHECKS.push({ name, fn });
+const SKIP = Symbol('skip');
+
+// ① 轉換向量。期望值是**照 Unicode 碼位表逐字寫死的**（不取自轉換器的輸出）：
+//    藏文字母 ཨ 0F68／ཀ 0F40／མ 0F58／ས 0F66／ད 0F51／ཧ 0F67，下加字 ྡ 0FA1／ྷ 0FB7／ྲ 0FB2，
+//    母音與記號 ཱ 0F71／ི 0F72／ུ 0F74／ོ 0F7C／ཾ 0F7E／ཿ 0F7F／ྃ 0F83，標點 ་ 0F0B／། 0F0D／༎ 0F0E／༄ 0F04，
+//    借用的悉曇記號 115C1，全形空格 3000。拉丁是 IAST（預設選項）。
+const KA = C(0x0F40), MA = C(0x0F58), TSHEG = C(0x0F0B), SHAD = C(0x0F0D);
+const VECTORS = [
+  ['o;m', C(0x0F68, 0x0F7C, 0x0F7E), 'o' + C(0x1E43)],
+  ['siddha;m', C(0x0F66, 0x0F72, 0x0F51, 0x0FA1, 0x0FB7, 0x0F7E), 'siddha' + C(0x1E43)],
+  ['hrii.h', C(0x0F67, 0x0FB2, 0x0F71, 0x0F72, 0x0F7F), 'hr' + C(0x012B, 0x1E25)],
+  ['huu~m', C(0x0F67, 0x0F71, 0x0F74, 0x0F83), 'h' + C(0x016B) + 'm' + C(0x0310)],
+  ['ka ma', KA + MA, 'ka ma'],                                  // 一個空格：音節邊界，不輸出
+  ['ka  ma', KA + TSHEG + MA, 'ka ma'],                         // 兩個空格：tsheg
+  ['ka   ma', KA + C(0x3000) + MA, 'ka ma'],                    // 三個空格：全形空格
+  ['ka|', KA + SHAD, 'ka|'],
+  ['ka||', KA + C(0x0F0E), 'ka||'],
+  ['ka~', KA + C(0x115C1), 'ka'],                               // ~ 在藏文欄借用悉曇記號；拉丁忽略
+  ['~~ka', C(0x0F04) + KA, 'ka'],
+  ['ka|  ma', KA + SHAD + ' ' + MA, 'ka| ma']                   // 標點後的 tsheg → 一個空格
+];
+check('① 轉換向量（藏文與拉丁；期望值照碼位表寫死）', (w) => {
+  const c = new w.Converter();
+  const bad = [];
+  for (const [i, tib, lat] of VECTORS) {
+    const r = c.convert(i);
+    if (r.tibetan !== tib) bad.push(JSON.stringify(i) + ' 藏文 ' + cps(r.tibetan) + '（應為 ' + cps(tib) + '）');
+    if (r.latin !== lat) bad.push(JSON.stringify(i) + ' 拉丁 ' + JSON.stringify(r.latin) + '（應為 ' + JSON.stringify(lat) + '）');
+  }
+  return bad.length ? 'FAIL: ' + bad.join('；') : true;
+});
+
+// ② 記號列的每一鍵都在說一句話：「按這一鍵，藏文欄會出現鍵上的那個字」。那句話的兩半來自兩個地方——
+//    字形與記法是 data/assist.json 寫的（經 lib 的 keysFromAssist），轉出什麼是防腐層算的 ⇒ 把記法真的餵給防腐層逐鍵比，
+//    ISO 15919 與 Kyoto-Harvard 兩種輸入法各一次（兩者同字，記號列才只要一套）。
+//    每一類在什麼前後文裡驗（同 tibetan-siddham 的 verify.js）：母音／子音直接比；元音符號接在 k 之後（記號接在 ka 之後）；
+//    下加輔音接在 m 之後（m 不與任何字母併成別的記法）；標點夾在兩個音節之間。
+function expectation(id, ins, char, signs) {
+  switch (id) {
+    case 'vowel':
+    case 'consonant': return [ins, char];
+    case 'vowel_sign': return [(signs.has(ins) ? 'ka' : 'k') + ins, KA + char];
+    case 'subjoined': return ['m' + ins + 'a', MA + char];
+    case 'punct': return ['ka' + ins + 'ka', KA + char + KA];
+    default: return null;
+  }
+}
+const carrierOf = (assist, id) => { const c = (assist.categories || []).find((x) => x.id === id); return (c && typeof c.carrier === 'string') ? c.carrier : ''; };
+check('② 記號列每一鍵：記法餵給防腐層，藏文輸出＝鍵上的字形（ISO／KH）', (w) => {
+  const bad = [];
+  let n = 0;
+  for (const id of w.Lib.KEYSET_IDS) {
+    const keys = w.Lib.keysFromAssist(w.assist, id);
+    if (!keys.length) { bad.push(id + ' 0 個鍵'); continue; }
+    const carrier = carrierOf(w.assist, id);
+    for (const k of keys) {
+      if (!k.ins) continue;                               // 沒有記法的格由 ③ 管
+      if (carrier && !k.glyph.startsWith(carrier)) { bad.push(id + ':' + k.label + ' 的字形沒有載體'); continue; }
+      const ex = expectation(id, k.ins, k.glyph.slice(carrier.length), w.signs);
+      if (!ex) { bad.push(id + '：不認得的類別，沒有驗證方式'); break; }
+      for (const m of ['ISO15919', 'KH']) {
+        n++;
+        const got = new w.Converter({ inputMethod: m }).convert(ex[0]).tibetan;
+        if (got !== ex[1]) bad.push(id + ':' + JSON.stringify(k.ins) + '（' + m + '）得到 ' + cps(got) + '，鍵上是 ' + cps(ex[1]));
+      }
+    }
+  }
+  if (n < 200) bad.push('只驗到 ' + n + ' 次（五組 × 兩種輸入法應有 200 次以上）——空的比對不算通過');
+  return bad.length ? 'FAIL: ' + bad.slice(0, 8).join('；') : true;
+});
+
+// ③ 沒有記法的格（下加輔音裡的三個固定形 U+0FBA／0FBB／0FBC）：轉換器打不出來，留著是為了辨認。
+//    (a) lib 給它空的 ins（不替它編一個記法）；(b) 它標的那個記法（alt）真的轉不出它；(c) 控制器遇到空的 ins 只出提示、不插入。
+check('③ 沒有記法的三格：不插入、而且真的打不出來', (w) => {
+  const bad = [];
+  const keys = w.Lib.keysFromAssist(w.assist, 'subjoined').filter((k) => !k.ins);
+  const got = keys.map((k) => k.glyph.slice(carrierOf(w.assist, 'subjoined').length)).sort().join('');
+  const want = [C(0x0FBA), C(0x0FBB), C(0x0FBC)].sort().join('');
+  if (got !== want) bad.push('沒有記法的格是 ' + cps(got) + '（應為那三個固定形）');
+  for (const id of w.Lib.KEYSET_IDS) if (id !== 'subjoined' && w.Lib.keysFromAssist(w.assist, id).some((k) => !k.ins)) bad.push(id + ' 也有沒有記法的格');
+  const sub = (w.assist.categories || []).find((c) => c.id === 'subjoined') || { entries: [] };
+  for (const e of sub.entries) {
+    if (e.code) continue;
+    if (!e.alt) { bad.push(cps(e.char) + ' 沒有 alt'); continue; }
+    for (const m of ['ISO15919', 'KH']) {
+      if (new w.Converter({ inputMethod: m }).convert('m' + e.alt + 'a').tibetan === MA + e.char) bad.push(cps(e.char) + ' 其實打得出來（' + e.alt + '）');
+    }
+  }
+  if (!/var ins = b\.getAttribute\('data-ins'\);\s*if \(!ins\) \{[\s\S]{0,260}?return;\s*\}\s*insert\(ins\);/.test(w.js)) bad.push('控制器沒有先擋掉空的記法');
+  if (!/'key' \+ \(k\.ins \? '' : ' key-noinput'\)/.test(w.js) || !/\.key-noinput\s*\{/.test(w.css)) bad.push('沒有記法的鍵看起來與可以插入的一樣');
+  return bad.length ? 'FAIL: ' + bad.join('；') : true;
+});
+
+// ④ insertAt：取代選取範圍、游標落在插入文字之後、索引夾回範圍
+check('④ insertAt', (w) => {
+  const t = [
+    [['abc', 1, 1, 'X'], 'aXbc', 2],
+    [['abc', 0, 3, 'Z'], 'Z', 1],
+    [['abc', 3, 3, ';m'], 'abc;m', 5],
+    [['abc', 2, 1, '-'], 'a-c', 2],
+    [['abc', 99, 99, '.h'], 'abc.h', 5],
+    [['ka', 2, 2, '  '], 'ka  ', 4],                       // tsheg 鍵插入的是兩個空格，一個都不能少
+    [['', undefined, undefined, 'aa'], 'aa', 2]
+  ];
+  const bad = t.filter(([a, v, c]) => { const r = w.Lib.insertAt(...a); return r.value !== v || r.caret !== c; });
+  return bad.length ? 'FAIL: ' + JSON.stringify(bad.map((b) => b[0])) : true;
+});
+
+// ⑤ shellBox：有 visualViewport 時貼齊它（含 iOS 的 offsetTop）；沒有時退回 innerHeight；量不到回 null
+check('⑤ shellBox', (w) => {
+  const L = w.Lib;
+  const ok =
+    eq(L.shellBox({ vvHeight: 430.4, vvTop: 312.6, innerHeight: 812 }), { top: 313, height: 430 }) &&
+    eq(L.shellBox({ vvHeight: NaN, vvTop: NaN, innerHeight: 700 }), { top: 0, height: 700 }) &&
+    eq(L.shellBox({ vvHeight: 0, vvTop: 50, innerHeight: 640 }), { top: 0, height: 640 }) &&
+    L.shellBox({}) === null;
+  return ok || 'FAIL';
+});
+
+// ⑥ keyboardOpen：網址列收合（約 50–80px）不算鍵盤；少 120px 以上才算
+check('⑥ keyboardOpen 門檻', (w) => {
+  const k = w.Lib.keyboardOpen;
+  const ok = !k(812, 732) && !k(812, 693) && k(812, 692) && k(812, 430) && !k(0, 430) && !k(812, NaN);
+  return ok || 'FAIL';
+});
+
+// ⑦ 從 localStorage 讀回來的選項／草稿不可信：白名單以外一律退回預設
+check('⑦ normalizeOptions／normalizeDraft', (w) => {
+  const L = w.Lib;
+  const d = L.DEFAULT_OPTIONS;
+  const ok =
+    eq(L.normalizeOptions({ inputMethod: 'KH', transliteration: 'ISO15919', ignoreSpacesAndHyphens: false }),
+      { inputMethod: 'KH', transliteration: 'ISO15919', ignoreSpacesAndHyphens: false }) &&
+    eq(L.normalizeOptions({ inputMethod: 'x', transliteration: 3, ignoreSpacesAndHyphens: 'yes' }), d) &&
+    eq(L.normalizeOptions(null), d) &&
+    eq(L.normalizeDraft({ input: 5, options: 'bad' }), { input: '', options: d }) &&
+    eq(L.normalizeDraft({ input: 'o;m' }), { input: 'o;m', options: d });
+  return ok || 'FAIL';
+});
+
+// ⑧ 版型：輸出在上、記號列、輸入貼底（DOM 順序）——這支 app 存在的理由
+check('⑧ DOM 順序：輸出 → 記號列 → 輸入', (w) => {
+  const a = w.html.indexOf('id="out-pane"'), b = w.html.indexOf('id="keybar"'), c = w.html.indexOf('id="tsm-input"');
+  return (a > 0 && a < b && b < c) || 'FAIL: out-pane / keybar / tsm-input 的順序不對';
+});
+
+// ⑨ 整頁不捲、外殼跟著可見範圍：body overflow hidden、.shell 讀 --shell-top／--shell-h、控制器寫它們
+check('⑨ 外殼貼齊可見範圍', (w) => {
+  const miss = [];
+  if (!/html,\s*body\s*\{[^}]*overflow:\s*hidden/.test(w.css)) miss.push('html,body overflow:hidden');
+  if (!/\.shell\s*\{[^}]*top:\s*var\(--shell-top/.test(w.css)) miss.push('.shell top');
+  if (!/\.shell\s*\{[^}]*height:\s*var\(--shell-h/.test(w.css)) miss.push('.shell height');
+  if (!/setProperty\('--shell-top'/.test(w.js) || !/setProperty\('--shell-h'/.test(w.js)) miss.push('controller setProperty');
+  if (!/visualViewport\.addEventListener\('resize'/.test(w.js)) miss.push('visualViewport resize');
+  if (!/interactive-widget=resizes-content/.test(w.html)) miss.push('viewport interactive-widget');
+  return miss.length ? 'FAIL: ' + miss.join(', ') : true;
+});
+
+// ⑩ 不放大：會聚焦的控制項字級 ≥ 16px（iOS 小於 16 會放大整頁；取 20 給 Artifacts 版）
+check('⑩ 控制項字級 ≥ 16px', (w) => {
+  const m = w.css.match(/--ctl-font:\s*(\d+)px/);
+  if (!m) return 'FAIL: 找不到 --ctl-font';
+  if (+m[1] < 16) return 'FAIL: --ctl-font ' + m[1] + 'px';
+  const inputUses = /\.tsm-input\s*\{[^}]*font-size:\s*var\(--ctl-font\)/.test(w.css);
+  const selectUses = /select\.browser-default\s*\{[^}]*font-size:\s*var\(--ctl-font\)/.test(w.css);
+  return (inputUses && selectUses) || 'FAIL: 輸入框或 select 沒用 --ctl-font';
+});
+
+// ⑪ 按記號鍵／清除鈕／切換鈕不可以讓輸入框失焦（mousedown 的預設動作就是搬焦點）
+check('⑪ 記號列／清除鈕／切換鈕擋掉 mousedown', (w) => {
+  const kb = /\$keybar\.addEventListener\('mousedown',[\s\S]{0,120}preventDefault\(\)/.test(w.js);
+  const cl = /clearBtn\.addEventListener\('mousedown',[^\n]*preventDefault\(\)/.test(w.js);
+  const ks = /keysetBtn\.addEventListener\('mousedown',[^\n]*preventDefault\(\)/.test(w.js);
+  return (kb && cl && ks) || 'FAIL: ' + (!kb ? '記號列 ' : '') + (!cl ? '清除鈕 ' : '') + (!ks ? '切換鈕' : '');
+});
+
+// ⑫ 觸控裝置用原生 select、不用 .materialize-textarea（兩者在手機上各有一個安靜的壞法）
+check('⑫ 原生 select／不用 materialize-textarea', (w) => {
+  const selects = w.html.match(/<select[^>]*>/g) || [];
+  const allNative = selects.length > 0 && selects.every((s) => /browser-default/.test(s));
+  const noFormSelect = !/FormSelect/.test(w.js);
+  const noMzTextarea = !/materialize-textarea/.test(w.html);
+  return (allNative && noFormSelect && noMzTextarea) || 'FAIL';
+});
+
+// ⑬ 手機輸入框不要自動大寫／自動校正（會把記法改壞；KH 的大小寫有意義）
+check('⑬ 輸入框關掉自動大寫／校正', (w) => {
+  const tag = (w.html.match(/<textarea[^>]*id="tsm-input"[^>]*>/) || [''])[0];
+  const need = ['autocapitalize="off"', 'autocorrect="off"', 'spellcheck="false"'];
+  const miss = need.filter((a) => tag.indexOf(a) < 0);
+  return miss.length ? 'FAIL: ' + miss.join(' ') : true;
+});
+
+// ⑭ i18n：三語 key 集合相同；HTML 與控制器用到的 key 都有定義
+check('⑭ i18n key 齊全', (w) => {
+  const sets = Object.values(w.locales).map((d) => Object.keys(d).sort().join('|'));
+  if (new Set(sets).size !== 1) return 'FAIL: 三語 key 集合不同';
+  const dict = w.locales['zh-Hant'];
+  const used = new Set();
+  for (const m of w.html.matchAll(/data-i18n(?:-html|-title|-placeholder|-doctitle)?="([^"]+)"/g)) used.add(m[1]);
+  for (const m of w.js.matchAll(/I18n\.t\('([^']+)'\s*[,)]/g)) used.add(m[1]);   // 只收完整字面值；'keyset.' + x 這種前綴另列於下
+  // 紀錄清單那一段的 key 是經 recToast／arm／recButton 的參數傳進 I18n.t 的 ⇒ 上面那條只認 I18n.t('…') 的規則看不到它們
+  for (const m of w.js.matchAll(/'((?:rec|toast|out|keybar)\.[A-Za-z.]+)'/g)) used.add(m[1]);
+  used.add('tool.more');   // side-tool.js 動態產生 #setting-more 時掛的（DESIGN_GUIDELINES §6）
+  for (const id of w.Lib.KEYSET_IDS) used.add('keyset.' + id);   // I18n.t('keyset.' + state.keyset)
+  const miss = [...used].filter((k) => !(k in dict));
+  return miss.length ? 'FAIL: 未定義 ' + miss.join(', ') : true;
+});
+
+// ⑮ 共用文案逐字照 DESIGN_GUIDELINES §6 的正典表
+check('⑮ 共用文案照 §6 正典', (w) => {
+  const canon = {
+    'tool.lang': ['語言', 'Language', '言語'],
+    'tool.mode': ['切換 light / dark', 'Toggle light / dark', 'ライト / ダーク切替'],
+    'tool.more': ['更多工具', 'More tools', 'その他のツール'],
+    'toast.lang': ['已切換為 {name}', 'Switched to {name}', '{name} に切り替えました'],
+    'toast.copied': ['已複製', 'Copied', 'コピーしました']
+  };
+  const codes = ['zh-Hant', 'en', 'ja'];
+  const bad = [];
+  for (const [k, v] of Object.entries(canon)) codes.forEach((c, i) => { if (w.locales[c][k] !== v[i]) bad.push(c + ':' + k); });
+  return bad.length ? 'FAIL: ' + bad.join(' ') : true;
+});
+
+// ⑯ 字型：repo 裡只有 Noto Serif Tibetan 與 Noto Sans Siddham（皆 OFL）；CSS 沒有任何 local()
+//    （iOS 的網頁讀不到使用者自己裝的字型，寫了也只是在桌機上碰巧命中——看起來正常，手機上是另一回事）
+check('⑯ 字型只有兩支 Noto、沒有 local()', (w) => {
+  const exts = new Set(['.ttf', '.otf', '.ttc', '.dfont', '.woff', '.woff2', '.eot']);
+  const fonts = walk(REPO).filter((p) => exts.has(path.extname(p).toLowerCase()))
+    .map((p) => path.relative(REPO, p)).filter((p) => !p.startsWith('node_modules') && !p.startsWith('artifact/dist')).sort();
+  const want = ['public/apps/' + NAME + '/' + FONT_SIDDHAM, 'public/apps/' + NAME + '/' + FONT_TIBETAN].sort();
+  const ok = eq(fonts, want);
+  const noLocal = !/local\(/.test(noBlockComments(w.css));
+  return (ok && noLocal) || 'FAIL: ' + fonts.join(', ') + (noLocal ? '' : '（CSS 有 local()）');
+});
+
+// ⑰ 原始碼沒有 NUL 位元組（會讓 grep 靜默跳過、git 當 binary）
+check('⑰ 原始碼無 NUL', () => {
+  const bad = walk(path.join(REPO, 'public')).concat(walk(path.join(REPO, 'scripts')), walk(path.join(REPO, 'artifact')))
+    .filter((p) => /\.(js|html|css|py|sh|json|tsv)$/.test(p) && !p.includes('artifact/dist'))
+    .filter((p) => fs.readFileSync(p).includes(0));
+  return bad.length ? 'FAIL: ' + bad.map((p) => path.relative(REPO, p)).join(', ') : true;
+});
+
+// ⑱ 複製件與權威版逐位元組相同（上游不在旁邊 ⇒ SKIP）
+const COPIES_FAMILY = ['side-tool.css', 'side-tool.js', 'i18n.js', 'materialize-dark.css'];
+const COPIES_UPSTREAM = ['tibetan-siddham-converter.js', 'tibetan-core.js', 'data/tibetan.tsv', 'data/assist.json',
+  'vendor/bonji-input/siddham.js', 'vendor/bonji-input/LICENSE', 'vendor/bonji-input/SOURCE.md',
+  FONT_TIBETAN, 'fonts/NotoSerifTibetan-OFL.txt', FONT_SIDDHAM, 'fonts/NotoSansSiddham-OFL.txt'];
+check('⑱ 複製件 md5（家族共用件＋tibetan-siddham 的轉換核心）', () => {
+  if (!fs.existsSync(FAMILY) || !fs.existsSync(UPSTREAM)) return SKIP;
+  const pairs = [...COPIES_FAMILY.map((f) => [path.join(FAMILY, f), f]), ...COPIES_UPSTREAM.map((f) => [path.join(UPSTREAM, f), f])];
+  const bad = pairs.filter(([src, f]) => !fs.existsSync(src) || md5(src) !== md5(path.join(APP, f))).map((p) => p[1]);
+  return bad.length ? 'FAIL: ' + bad.join(', ') : true;
+});
+
+// ⑲ 防腐層紀律：控制器與 lib 都不直接 import 藏文核心或 vendored 引擎
+check('⑲ 不直接 import 引擎或藏文核心', (w) => {
+  const re = /vendor\/bonji-input|tibetan-core/;
+  const bad = re.test(jsCode(w.js)) || re.test(jsCode(w.libSrc));
+  return !bad || 'FAIL';
+});
+
+// ⑳ 上緣安全區由外殼墊、不由頁首墊〔bonji-mobile，owner 2026-10-08：Claude App 裡標題被遮約 75%〕：
+//    頁首是 height:48px ＋ border-box，墊在它身上會被吃進那 48px（標題只往下移一半）。
+check('⑳ 安全區墊在外殼上', (w) => {
+  const shell = /\.shell\s*\{[^}]*padding-top:\s*env\(safe-area-inset-top/.test(w.css);
+  // ⚠️ 錨在行首：檔案裡第一個 `.topbar {` 是 `body.kb-open .topbar { display:none }`，不錨的話這條會去看那一條而永遠綠
+  const topbar = (w.css.match(/^\.topbar\s*\{[^}]*\}/m) || [''])[0];
+  if (!topbar) return 'FAIL: 找不到 .topbar 規則';
+  const toast = /#toast-container\s*\{[^}]*top:[^;]*safe-area-inset-top/.test(w.css);
+  return (shell && !/safe-area-inset-top/.test(topbar) && toast) || 'FAIL: ' + (!shell ? '外殼沒墊 ' : '') + (/safe-area-inset-top/.test(topbar) ? '頁首又墊了 ' : '') + (!toast ? 'toast 沒讓開' : '');
+});
+
+// ㉑ 記號列切換鈕在清除鈕的右邊，且兩者都在輸入列裡（輸入 → 清除 → 切換）
+check('㉑ 切換鈕在清除鈕右邊', (w) => {
+  const bar = (w.html.match(/<div class="in-bar">[\s\S]*?<\/div>/) || [''])[0];
+  const a = bar.indexOf('id="tsm-input"'), b = bar.indexOf('id="clear-input"'), c = bar.indexOf('id="keyset-toggle"');
+  return (a >= 0 && a < b && b < c) || 'FAIL: in-bar 內的順序不是 輸入 → 清除 → 切換';
+});
+
+// ㉒ Claude App 裡鍵盤彈出時頁面被往上推、iframe 不縮〔bonji-mobile，owner 2026-10-08 截圖〕：
+//    (a) 藏文與拉丁轉寫左右並排、2:1 寫進 flex-basis；(b) 文字靠底（margin-top:auto，不是 justify-content:flex-end）；
+//    (c) 輸入框有焦點時外殼不墊底部安全區（高度判斷在那裡看不到鍵盤）。
+check('㉒ 並排 2:1／文字靠底／聚焦不墊底', (w) => {
+  const miss = [];
+  if (!/\.out-pane\s*\{[^}]*flex-direction:\s*row/.test(w.css)) miss.push('out-pane 不是 row');
+  if (!/\.out-block-tibetan\s*\{[^}]*flex:\s*0 0 calc\(\(100% - 8px\) \* 2 \/ 3\)/.test(w.css)) miss.push('藏文不是 2/3 basis');
+  if (!/^\.out-text\s*\{[^}]*margin-top:\s*auto/m.test(w.css)) miss.push('文字沒靠底');
+  if (/justify-content:\s*flex-end/.test((w.css.match(/^\.out-value\s*\{[^}]*\}/m) || [''])[0])) miss.push('用了 flex-end（溢出的上半截會捲不上去）');
+  if (!/\.shell:has\(#tsm-input:focus\)\s*\{[^}]*padding-bottom:\s*0/.test(w.css)) miss.push('聚焦時仍墊底部安全區');
+  const to = w.html.match(/class="out-value"><div id="out-tibetan" class="out-text/);
+  const lo = w.html.match(/class="out-value"><div id="out-latin" class="out-text/);
+  if (!to || !lo) miss.push('輸出文字不在 .out-value 裡的 .out-text');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㉓ 複製鈕在欄位底部：Claude App 裡鍵盤開著時欄位頂端被 App 標題列蓋住（㉒ 同一個成因），放頂端就按不到。
+//    每一欄都要「捲動框在前、含複製鈕的 .out-foot 在後」。
+const outBlock = (html, k) => (html.match(new RegExp('<div class="out-block out-block-' + k + '">[\\s\\S]*?\\n      </div>')) || [''])[0];
+check('㉓ 複製鈕在欄位底部', (w) => {
+  const bad = [];
+  for (const k of ['tibetan', 'latin']) {
+    const blk = outBlock(w.html, k);
+    const v = blk.indexOf('id="out-' + k + '"'), f = blk.indexOf('class="out-foot"'), c = blk.indexOf('data-copy="' + k + '"');
+    if (!(v >= 0 && v < f && f < c)) bad.push(k);
+  }
+  return bad.length ? 'FAIL: ' + bad.join('、') + ' 的複製鈕不在捲動框之後的 .out-foot 裡' : true;
+});
+
+// ㉔ 記號列五組：母音 → 子音 → 元音符號 → 下加輔音 → 標點——就是 data/assist.json 的類別、同一個順序（＝tibetan-siddham 輔助輸入面板的順序）。
+//    lib 寫死的只有「收哪幾類、依什麼順序」；assist.json 多一類或換了順序而這裡沒跟上，這一條會紅。
+//    每一組的鍵數＝資料那一類的格數（不去重、不漏）；總數 108 是上游文件寫的數字（期望值不取自 lib）。
+check('㉔ 記號列五組依序：母音 → 子音 → 元音符號 → 下加輔音 → 標點（＝assist.json 的類別）', (w) => {
+  const ids = w.Lib.KEYSET_IDS.join(',');
+  if (ids !== 'vowel,consonant,vowel_sign,subjoined,punct') return 'FAIL: KEYSET_IDS = ' + ids;
+  const cats = (w.assist.categories || []).map((c) => c.id).join(',');
+  if (cats !== ids) return 'FAIL: assist.json 的類別是 ' + cats;
+  const counts = w.Lib.KEYSET_IDS.map((id) => w.Lib.keysFromAssist(w.assist, id).length);
+  if (counts.join(',') !== '16,34,16,37,5') return 'FAIL: 各組鍵數 ' + counts.join(',') + '（應為 16,34,16,37,5 ＝ 108）';
+  const tsheg = w.Lib.keysFromAssist(w.assist, 'punct')[0];
+  if (!tsheg || tsheg.ins !== '  ' || tsheg.glyph !== TSHEG || !tsheg.label.trim()) return 'FAIL: 標點組第一鍵不是 tsheg（兩個空格、鍵上有看得見的標示）';
+  if (w.Lib.keysFromAssist(w.assist, 'nope').length || w.Lib.keysFromAssist(null, 'vowel').length) return 'FAIL: 不認得的組或讀不到資料時沒有回空陣列';
+  if (w.Lib.normalizeKeyset('nope') !== 'vowel') return 'FAIL: 認不得的值沒有退回母音';
+  return true;
+});
+
+// ㉕ **不處理悉曇**〔owner 2026-10-12：藏文梵字的組字與悉曇的組字並不是一一對應，並排反而造成混淆〕。
+//    畫面沒有悉曇欄、控制器不讀防腐層回的悉曇、JSON 輸出沒有悉曇、文案沒有悉曇那一欄的標籤。
+//    （防腐層是 tibetan-siddham 的複製件，照樣會算悉曇——那是它的事；本 app 只是不用。）
+check('㉕ 不處理悉曇：畫面、控制器、JSON 輸出都沒有', (w) => {
+  const miss = [];
+  if (/out-siddham|siddham-text|data-copy="siddham"/.test(w.html)) miss.push('index.html 有悉曇欄');
+  if (/\.siddham\b/.test(jsCode(w.js))) miss.push('控制器讀了 .siddham');
+  if (/siddham-text|out-block-siddham/.test(noBlockComments(w.css))) miss.push('CSS 有悉曇欄的樣式');
+  const exp = w.Lib.buildExport([w.Lib.makeRecord('t', 'ka', null, 'S')], (i, o) => { const r = new w.Converter(o).convert(i); return r; }, 'T');
+  const keys = exp.records[0].output ? Object.keys(exp.records[0].output).join(',') : '（無）';
+  if (keys !== 'tibetan,latin,codepoints') miss.push('JSON 輸出的 output 欄位是 ' + keys);
+  for (const [code, d] of Object.entries(w.locales)) if ('out.siddham' in d) miss.push(code + ' 有 out.siddham');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㉖ 藏文核心要先載對照表（data/tibetan.tsv），比 bonji-mobile 多這一步：
+//    (a) 載好之前 convert() 不轉、清單不算（否則是一整排「轉換失敗」）；(b) 載不到要在畫面上講——
+//    空著的輸出欄與「這段記法轉不出任何字」長得一樣；(c) 載好（或確定載不到）之後補轉一次。
+check('㉖ 對照表載好才轉；載不到要講', (w) => {
+  const miss = [];
+  const conv = fnBody(w.js, 'convert');
+  if (!/if \(!state\.ready\) \{[\s\S]*?return;\s*\}/.test(conv)) miss.push('convert() 在對照表載好之前照轉');
+  if (!/state\.tableFailed \? I18n\.t\('out\.tableFail'/.test(conv)) miss.push('載不到時輸出欄不講');
+  if (!/if \(!state\.ready && !state\.tableFailed\) \{[\s\S]*?I18n\.t\('rec\.loading'\)[\s\S]*?return;\s*\}/.test(fnBody(w.js, 'renderRecords'))) miss.push('清單在對照表載好之前就現算');
+  if (!/converter\.ready\(\)\.then\(function \(\) \{\s*state\.ready = true;\s*\}, function \(e\) \{[\s\S]*?state\.tableFailed = [\s\S]*?\}\)\.then\(function \(\) \{\s*convert\(\);\s*renderRecords\(\);/.test(w.js)) miss.push('init 沒有等 ready()、或載好後沒有補轉');
+  if (!/^\.out-text\.out-error\s*\{/m.test(w.css)) miss.push('沒有 .out-error 的樣式（原因會被畫成藏文字級）');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㉗ 鍵上的藏文字形放得進鍵裡。藏文的上方符號與下加字都比悉曇高（墨水：基線上最多 1.11em、基線下最多 0.77em，2026-10-12 逐格量），
+//    bonji-mobile 的 46px 鍵、行高 1.1 在這裡會把上方符號裁掉（實測）。⇒ 字號與鍵高都用 px（Materialize 會改根字級），
+//    字形框（字號 × 行高）至少 1.9em，而且 字形框 ＋ 記法那一行（13px）≤ 鍵高。
+check('㉗ 鍵上的藏文字形放得進鍵裡', (w) => {
+  const g = (w.css.match(/^\.key-glyph\s*\{[^}]*\}/m) || [''])[0];
+  const fs = g.match(/font-size:\s*([\d.]+)(px|rem|em)/), lh = g.match(/line-height:\s*([\d.]+)\s*;/);
+  const key = (w.css.match(/^\.keybar \.key\s*\{[^}]*\}/m) || [''])[0].match(/[^-]height:\s*([\d.]+)(px|rem|em)/);
+  if (!fs || !lh || !key) return 'FAIL: 找不到 .key-glyph 的字號／行高或 .keybar .key 的高度';
+  if (fs[2] !== 'px' || key[2] !== 'px') return 'FAIL: 要用 px（' + fs[2] + '／' + key[2] + '）';
+  if (+lh[1] < 1.9) return 'FAIL: 字形框只有 ' + lh[1] + 'em（上方符號或下加字會被裁掉）';
+  const box = +fs[1] * +lh[1];
+  if (box + 13 > +key[1]) return 'FAIL: 字形框 ' + box + 'px ＋ 記法 13px 超過鍵高 ' + key[1] + 'px';
+  if (!/\.keybar\s*\{[^}]*overflow-y:\s*hidden/.test(w.css)) return 'FAIL: 記號列可以上下捲（藏文字形的內容區比行盒高）';
+  return true;
+});
+
+// ㉘ 紀錄清單：**標題可以重複、可以留空**〔bonji-mobile，owner 2026-10-11：一部咒語分好幾段記，每一段掛同一個標題〕。
+//    標題不是鍵 ⇒ 加入不查重、不覆寫；同名各段靠順序分開（輸出的 part＝同一個標題裡第幾段，seq＝整份清單第幾筆）。
+check('㉘ 紀錄：標題可以重複、可以留空，part 依標題分段', (w) => {
+  const L = w.Lib, o = L.DEFAULT_OPTIONS;
+  const mk = (t, i) => L.makeRecord(t, i, o, 'S');
+  const bad = [];
+  const recs = [mk('百字明', 'o;m'), mk('  百字明 ', 'va jra'), mk('', 'huu~m'), mk('六字大明咒', 'ma .ni'), mk('百字明', 'sa tva'), mk('__proto__', 'a'), mk('__proto__', 'aa')];
+  if (recs.some((r) => !r)) return 'FAIL: 有標題／空標題的紀錄建不出來';
+  let items = [];
+  for (const r of recs) {
+    const before = items;
+    items = L.addRecord(items, r);
+    if (items === before || before.length !== items.length - 1) bad.push('addRecord 改了傳進來的陣列，或沒有多一筆');
+  }
+  if (items.length !== 7) bad.push('同名的被併掉了：' + items.length + ' 筆（應為 7）');
+  if (recs[1].title !== '百字明') bad.push('標題前後的空白沒去掉');
+  if (mk('x', '   ') !== null || mk('x', 5) !== null) bad.push('空的輸入也記成一筆');
+  const exp = L.buildExport(items, () => ({ tibetan: 't', latin: 'l', codepoints: 'c' }), 'T');
+  const got = exp.records.map((r) => r.seq + ':' + r.title + ':' + r.part).join(' ');
+  const want = '1:百字明:1 2:百字明:2 3::1 4:六字大明咒:1 5:百字明:3 6:__proto__:1 7:__proto__:2';
+  if (got !== want) bad.push('seq／part = ' + got);
+  if (exp.count !== 7 || exp.app !== NAME || exp.exportedAt !== 'T') bad.push('信封欄位不對');
+  // 取代：位置不變（分段的順序就是資料）、其他筆不動；刪除：只少那一筆。兩者都不改傳進來的陣列。
+  const rep = L.replaceRecord(items, 1, mk('百字明', 'NEW'));
+  if (rep.length !== 7 || rep[1].input !== 'NEW' || rep[0] !== items[0] || rep[2] !== items[2] || items[1].input !== 'va jra') bad.push('replaceRecord 沒有就地取代');
+  if (!eq(L.replaceRecord(items, 9, mk('x', 'y')), items)) bad.push('replaceRecord 超出範圍時動了清單');
+  const rem = L.removeRecord(items, 1);
+  if (rem.length !== 6 || rem[1] !== items[2] || items.length !== 7) bad.push('removeRecord');
+  return bad.length ? 'FAIL: ' + bad.join('；') : true;
+});
+
+// ㉙ JSON 輸出：藏文／拉丁／碼位不落地，輸出當下**每一筆用它自己的選項**現算。
+//    期望值寫死在這裡（同一段 `siddha;m`：IAST 是 ṃ、ISO 15919 是 ṁ；藏文見 ① 的碼位）——不取自 buildExport 自己的計算。
+//    轉不出來的那一筆 `output: null` ＋ `error`：不整份失敗，也不安靜地少一筆。
+//    控制器的 convertWith 與這裡的 conv 是同一個形狀：碼位取**藏文那一欄**的。
+check('㉙ JSON 輸出：每筆用自己的選項現算；轉不出來的那一筆不消失', (w) => {
+  const L = w.Lib;
+  const conv = (input, options) => { const r = new w.Converter(options).convert(input); return { tibetan: r.tibetan, latin: r.latin, codepoints: r.codepoints.tibetan }; };
+  const iast = { inputMethod: 'ISO15919', transliteration: 'IAST', ignoreSpacesAndHyphens: true };
+  const iso = { inputMethod: 'ISO15919', transliteration: 'ISO15919', ignoreSpacesAndHyphens: true };
+  const items = [L.makeRecord('t', 'siddha;m', iast, 'A'), L.makeRecord('t', 'siddha;m', iso, 'B')];
+  const bad = [];
+  const [r1, r2] = L.buildExport(items, conv, 'T').records;
+  const lat = (r) => (r && r.output ? r.output.latin : '（無）');
+  if (lat(r1) !== 'siddha' + C(0x1E43)) bad.push('第 1 筆（IAST）latin = ' + lat(r1));
+  if (lat(r2) !== 'siddha' + C(0x1E41)) bad.push('第 2 筆（ISO 15919）latin = ' + lat(r2));
+  if (r1 && r1.output && (r1.output.tibetan !== C(0x0F66, 0x0F72, 0x0F51, 0x0FA1, 0x0FB7, 0x0F7E) || r1.output.codepoints !== 'U+0F66 U+0F72 U+0F51 U+0FA1 U+0FB7 U+0F7E')) bad.push('tibetan／codepoints');
+  if (!r1 || r1.input !== 'siddha;m' || r1.savedAt !== 'A') bad.push('input／savedAt 沒有原樣帶出');
+  const keys = r1 ? Object.keys(r1).join(',') : '';
+  if (keys !== 'seq,part,title,options,input,output,savedAt') bad.push('一筆的欄位變了：' + keys);
+  const exp2 = L.buildExport(items, (i, o) => { if (o.transliteration === 'ISO15919') throw new Error('boom'); return conv(i, o); }, 'T');
+  if (exp2.count !== 2 || exp2.records.length !== 2 || !exp2.records[0].output || exp2.records[1].output !== null || exp2.records[1].error !== 'boom') bad.push('轉不出來的那一筆沒有留下 output:null ＋ error');
+  // 控制器餵給 buildExport 的那支：每一筆各自一個轉換器（不是畫面上那一個——它帶的是「現在」的選項）
+  if (!/function convertWith\(input, options\) \{\s*var r = new TibetanSiddhamConverter\(options\)\.convert\(input\);\s*return \{ tibetan: r\.tibetan, latin: r\.latin, codepoints: r\.codepoints\.tibetan \};/.test(w.js)) bad.push('控制器的 convertWith 沒有用那一筆自己的選項，或欄位不是 藏文／拉丁／藏文碼位');
+  return bad.length ? 'FAIL: ' + bad.join('；') : true;
+});
+
+// ㉚ 從 localStorage 讀回來的紀錄清單不可信：不是陣列當成空的、壞掉的那幾筆丟掉、選項走白名單、多出來的鍵不留
+check('㉚ normalizeStore', (w) => {
+  const L = w.Lib, d = L.DEFAULT_OPTIONS;
+  const kh = { inputMethod: 'KH', transliteration: 'ISO15919', ignoreSpacesAndHyphens: false };
+  const s = L.normalizeStore({ title: '  a  b ', items: [
+    { title: 5, input: 'o;m', options: { inputMethod: 'x' }, savedAt: 7 }, { title: 't', input: '  ' }, 'junk', null,
+    { title: 't', input: 'hrii.h', options: kh, savedAt: 'S', extra: 1 }] });
+  const ok = s.title === 'a b' && s.items.length === 2 &&
+    eq(s.items[0], { title: '', input: 'o;m', options: d, savedAt: '', id: '', order: 0 }) &&
+    eq(s.items[1], { title: 't', input: 'hrii.h', options: kh, savedAt: 'S', id: '', order: 0 }) &&
+    // id／order：合格的留著（它們是那一筆的身分與位置），不合格的清掉（id 會被拿去當文件路徑）
+    eq(L.normalizeStore({ items: [{ input: 'a', id: 'r1_x-9', order: 7 }, { input: 'b', id: 'a/b', order: 'x' }] }).items.map((i) => i.id + ':' + i.order), ['r1_x-9:7', ':0']) &&
+    eq(L.normalizeStore(null), { title: '', items: [] }) && eq(L.normalizeStore({ items: 'x' }), { title: '', items: [] });
+  return ok || 'FAIL';
+});
+
+// ㉛ 紀錄功能在手機上的幾個坑（都是 bonji-mobile 踩出來的）：
+//    (a) 藏文欄底下的加入鈕擋 mousedown——打一段、加一筆、接著打，鍵盤不該收（同 ⑪）；它要在藏文欄的 .out-foot 裡（鍵盤開著時頁首按不到）
+//    (b) 標題欄字級走 --ctl-font（同 ⑩）；(c) 不用 confirm／alert／prompt——Artifacts 的 iframe 裡直接回 false，「先問再做」會變成永遠不做
+//    (d) 面板內 標題 → 清單 → JSON：iOS 鍵盤彈出時 bottom-sheet 的下半截被蓋住，上緣不會；底列固定（modal-fixed-footer）
+//    (e) 標題欄有焦點時鍵盤也開著，那時的高度不可以當成「沒有鍵盤」的基準
+check('㉛ 紀錄面板在手機上：加入不收鍵盤／不放大／不用 confirm／標題欄在最上面', (w) => {
+  const miss = [];
+  if (!/quick\.addEventListener\('mousedown',[^\n]*preventDefault\(\)/.test(w.js)) miss.push('加入鈕沒擋 mousedown');
+  const tblk = outBlock(w.html, 'tibetan');
+  const f = tblk.indexOf('class="out-foot"'), q = tblk.indexOf('id="rec-add-quick"');
+  if (!(f >= 0 && f < q)) miss.push('加入鈕不在藏文欄的 .out-foot 裡');
+  if (!/input\[type="text"\]\.rec-title\s*\{[^}]*font-size:\s*var\(--ctl-font\)/.test(w.css)) miss.push('標題欄沒用 --ctl-font');
+  // 標題欄旁的清除鈕：同樣擋 mousedown（焦點維持原狀）；它不可以包在 <label> 裡——label 的預設動作會把焦點送進標題欄、鍵盤跳出來
+  if (!/titleClear\.addEventListener\('mousedown',[^\n]*preventDefault\(\)/.test(w.js)) miss.push('標題的清除鈕沒擋 mousedown');
+  const ci = w.html.indexOf('id="rec-title-clear"');
+  if (ci < 0) miss.push('標題欄旁沒有清除鈕');
+  else if (w.html.lastIndexOf('<label', ci) > w.html.lastIndexOf('</label>', ci)) miss.push('清除鈕包在 <label> 裡');
+  if (/(^|[^.\w$])(confirm|alert|prompt)\s*\(|window\.(confirm|alert|prompt)\s*\(/m.test(jsCode(w.js))) miss.push('用了 confirm／alert／prompt');
+  const sheet = (w.html.match(/<div id="records-modal"[\s\S]*?\n  <\/div>\n/) || [''])[0];
+  const t = sheet.indexOf('id="rec-title"'), l = sheet.indexOf('id="rec-list"'), j = sheet.indexOf('id="rec-json"');
+  if (!(t > 0 && t < l && l < j)) miss.push('面板內的順序不是 標題 → 清單 → JSON');
+  if (!/modal-fixed-footer/.test((sheet.match(/<div id="records-modal"[^>]*>/) || [''])[0])) miss.push('不是 modal-fixed-footer');
+  if (!/if \(!focused && document\.activeElement !== \$recTitle\) state\.baseline = box\.height;/.test(w.js)) miss.push('標題欄有焦點時仍更新鍵盤基準');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㉜ 清單存在 localStorage——那是方便不是備份，而且可能存不住（iOS 上的 Artifacts 版寫得進讀不回）：
+//    每次存完讀回來比對，對不上就在面板上講出來。下載檔名照家族慣例 yyyyMMddHHmmss、圖示照 §5.6（file_download）。
+check('㉜ 清單存不住要講出來；下載檔名與圖示', (w) => {
+  const miss = [];
+  if (!/localStorage\.setItem\(REC_KEY, text\); ok = localStorage\.getItem\(REC_KEY\) === text;/.test(w.js)) miss.push('存完沒有讀回來比對');
+  if (!/getElementById\('rec-storage-note'\)\.hidden = ok && !state\.storageLost;/.test(w.js)) miss.push('存不住時面板上不講');
+  if (!/id="rec-storage-note"[^>]*data-i18n="rec\.storageFail"/.test(w.html)) miss.push('面板上沒有那一行');
+  const name = w.Lib.exportFilename(new Date(2026, 9, 12, 9, 5, 7));
+  if (name !== NAME + '-20261012090507.json') miss.push('檔名 ' + name);
+  if (!/id="rec-download"[^>]*>\s*<i class="material-icons left">file_download<\/i>/.test(w.html)) miss.push('下載鈕的圖不是 file_download');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㉝ **改標題不可以碰清單；動清單之前先看儲存區**〔bonji-mobile 2026-10-11 實際弄丟過 owner 的紀錄〕。
+//    那邊的第一版把標題與清單存在同一格、每次整格重寫：一個記憶裡的清單比儲存區舊的畫面（另一個分頁、另一個還開著的畫面後來記了幾筆），
+//    只要改標題、按清除、甚至關掉面板，就把那幾筆蓋掉。⇒ (a) 兩格分開存；(b) 改標題的三條路上沒有任何一行寫清單；
+//    (c) 寫清單的每一條路都先 syncItems()；(d) 「讀不到」不可以當成「被清空了」（storeDrift 的 lost）。
+function fnBody(src, name) { return (src.match(new RegExp('\\n  function ' + name + '\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}')) || [''])[0]; }
+check('㉝ 改標題不碰清單；動清單前先看儲存區', (w) => {
+  const miss = [];
+  const d = w.Lib.storeDrift;
+  if (!(d(null, null) === 'same' && d('a', 'a') === 'same' && d('a', 'b') === 'changed' && d(null, 'b') === 'changed' && d('a', null) === 'lost' && d('a', undefined) === 'lost')) miss.push('storeDrift 的判定不對');
+  const k1 = (w.js.match(/var REC_KEY = '([^']+)'/) || [])[1], k2 = (w.js.match(/var REC_TITLE_KEY = '([^']+)'/) || [])[1];
+  if (!k1 || !k2 || k1 === k2) miss.push('標題與清單不是分兩格存（' + k1 + '／' + k2 + '）');
+  // 改標題的路：clearTitle、saveTitle、標題欄的 input、面板關閉——都不可以出現 saveItems 或 REC_KEY
+  const titlePaths = {
+    clearTitle: fnBody(w.js, 'clearTitle'),
+    saveTitle: fnBody(w.js, 'saveTitle'),
+    '標題欄 input': (w.js.match(/\$recTitle\.addEventListener\('input', function \(\) \{[\s\S]*?\n    \}\);/) || [''])[0],
+    '面板關閉': (w.js.match(/M\.Modal\.init\(\$recModal, \{[\s\S]*?\n    \}\);/) || [''])[0]
+  };
+  for (const [name, body] of Object.entries(titlePaths)) {
+    if (!body) miss.push('找不到 ' + name);
+    else if (/saveItems\(|REC_KEY\b/.test(body)) miss.push(name + ' 寫到清單了');
+  }
+  if (!/JSON\.stringify\(\{ items: state\.rec\.items \}\)/.test(fnBody(w.js, 'saveItems'))) miss.push('saveItems 寫的不是只有 items');
+  // 寫清單的路：加入（先同步再接上去）、recAction（別處改過就停下來）
+  const add = fnBody(w.js, 'addCurrent');
+  if (!(add.indexOf('syncItems()') > 0 && add.indexOf('syncItems()') < add.indexOf('Lib.addRecord('))) miss.push('加入之前沒有先看儲存區');
+  const act = fnBody(w.js, 'recAction');
+  if (!/^\s*function recAction\(act, i\) \{\s*(\/\/[^\n]*\n\s*)*if \(syncItems\(\) === 'changed'\) \{[\s\S]*?return;\s*\}/.test(act.replace(/^\n/, ''))) miss.push('取代／刪除／清除之前沒有先看儲存區');
+  const callers = [...w.js.matchAll(/\n  function (\w+)\([^)]*\) \{[\s\S]*?\n  \}/g)].filter((m) => /saveItems\(\)/.test(m[0]) && m[1] !== 'saveItems').map((m) => m[1]).sort().join(',');
+  if (callers !== 'addCurrent,recAction') miss.push('會寫清單的函式變了：' + callers);
+  if (!/addEventListener\('storage'/.test(w.js)) miss.push('沒有聽 storage 事件');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㉞ Artifacts 版的清單住在 artifact 的資料庫裡〔bonji-mobile，owner 2026-10-11 實測：iPhone 的 Claude App 把 artifact 關掉重開，localStorage 就讀不回來〕。
+//    (a) **一筆一份文件**——加入／取代只 set 自己那一份、刪除只 delete 自己那一份；沒有「整份清單」那種文件（整份寫回去就是 ㉝ 那個坑）
+//    (b) 畫面上的清單＝資料庫送來的 ⊕ 這個畫面還沒被確認的寫入（mergeRemote），依 order 排、同值依 id
+//    (c) 資料庫作主之後不再寫這支瀏覽器的清單那一格（留著的話，別台刪掉的紀錄日後會從這裡被送回去）
+//    (d) id／order 不進 JSON 輸出；build.py 真的把那支同步帶進去，而且宣告的規則是 owner 才讀寫
+check('㉞ Artifacts 版：清單存資料庫、一筆一份文件', (w) => {
+  const L = w.Lib, miss = [];
+  const r = (id, order, input) => ({ id, order, input: input || id, title: '', options: L.DEFAULT_OPTIONS, savedAt: '' });
+  const remote = [r('b', 20), r('a', 10), r('c', 30)];
+  const ids = (xs) => xs.map((x) => x.id + (x.input !== x.id ? '=' + x.input : '')).join(' ');
+  if (ids(L.mergeRemote(remote, {}, {})) !== 'a b c') miss.push('沒依 order 排');
+  if (ids(L.mergeRemote(remote, { d: r('d', 15), b: r('b', 20, 'NEW') }, { c: true })) !== 'a d b=NEW') miss.push('待確認的寫入沒併進去：' + ids(L.mergeRemote(remote, { d: r('d', 15), b: r('b', 20, 'NEW') }, { c: true })));
+  if (ids(L.mergeRemote([r('y', 5), r('x', 5)], {}, {})) !== 'x y') miss.push('order 相同時沒依 id 排（兩台裝置會看到不同順序）');
+  if (ids(L.mergeRemote(remote, { c: r('c', 30, 'Z') }, { c: true })) !== 'a b') miss.push('已刪除的又被待確認的寫入帶回來');
+  if (remote.map((x) => x.id).join('') !== 'bac') miss.push('mergeRemote 改了傳進來的陣列');
+  if (L.nextOrder([r('a', 10), r('b', 99)], 50) !== 100 || L.nextOrder([], 50) !== 50 || L.nextOrder([r('a', 10)], 50) !== 50) miss.push('nextOrder');
+  const rec = L.makeRecord('t', 'o;m', null, 'S', 'rabc', 42);
+  if (!rec || rec.id !== 'rabc' || rec.order !== 42) miss.push('makeRecord 沒帶 id／order');
+  const out = L.buildExport([rec], () => ({ tibetan: 't', latin: 'l', codepoints: 'c' }), 'T').records[0];
+  if ('id' in out || 'order' in out) miss.push('id／order 漏進 JSON 輸出');
+  // 同步那一支：只對 records/<id> 與 state/title 做 set／delete
+  const src = w.remote.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s\/\/.*$/gm, '');
+  if (!/db\.collection\(COL\)\.doc\(rec\.id\)\.set\(\{/.test(src)) miss.push('put 不是寫 records/<id> 那一份');
+  if (!/db\.collection\(COL\)\.doc\(id\)\.delete\(\)/.test(src)) miss.push('remove 不是刪 records/<id> 那一份');
+  const sets = [...src.matchAll(/\.set\(/g)].length;
+  if (sets !== 2) miss.push('同步那一支有 ' + sets + ' 處 set（應為 2：一筆紀錄、標題）');
+  if (/items\s*:/.test(src)) miss.push('同步那一支出現整份清單的寫法（items:）');
+  if (!/fromCache/.test(src)) miss.push('沒有分辨「還不是完整版本」的清單');
+  if (!/window\.TibetanSiddhamMobileRemote = \{/.test(src) || !/window\.TibetanSiddhamMobileRemote\b/.test(w.js)) miss.push('同步那一支與控制器的接點名稱對不上');
+  // 控制器：資料庫作主時不碰這支瀏覽器的清單那一格
+  if (!/function saveItems\(\) \{\s*if \(remoteOn\(\)\) return;/.test(w.js)) miss.push('資料庫作主時仍寫 localStorage 的清單');
+  if (!/function syncItems\(\) \{\s*if \(remoteOn\(\)\) return 'same';/.test(w.js)) miss.push('資料庫作主時仍拿 localStorage 蓋掉清單');
+  if (!/Lib\.normalizeStore\(\{ items: list \}\)/.test(w.js)) miss.push('資料庫來的清單沒走白名單');
+  // 建置：帶進 dist、在控制器之前載入、宣告 owner 才讀寫
+  if (!/shutil\.copy2\(HERE \/ 'src' \/ 'remote-db\.js'/.test(w.build)) miss.push('build.py 沒帶 remote-db.js');
+  if (!/\('index\.html', CONTROLLER_TAG, REMOTE_TAG \+ CONTROLLER_TAG\)/.test(w.build)) miss.push('build.py 沒在控制器之前載入它');
+  if (!/"db": \{"rules": \[\{"path": "", "read": "owner", "write": "owner"\}\]\}/.test(w.build)) miss.push('宣告的規則不是 owner 才讀寫');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㉟ 備份腳本（scripts/backup-artifact.sh）——**在暫存資料夾裡真的跑**，不是看它的字面：
+//    (a) 空的清單是合法的，但不寫新檔、不輪替（連續空的清單不可以把最後一份有內容的備份擠掉）
+//    (b) 磁碟上的檔數 ≠ 呼叫端報的筆數 ⇒ exit 1、既有備份不動（取回不完整，或混進上一次留下的檔）
+//    (c) 不合格的文件 ⇒ exit 1、隔離、既有備份不動；(d) 內容與上一份相同 ⇒ 不另存；(e) 用完把取回來的檔清掉
+check('㉟ 備份腳本：空的不輪替／檔數要對得上／壞的不覆蓋好的', (w) => {
+  const os = require('os');
+  const { spawnSync } = require('child_process');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tsm-backup-'));
+  try {
+    // 腳本以它自己的位置找 lib ⇒ 在暫存區擺出同樣的相對位置（lib 用世界裡那一份，selftest 改得到）
+    const sdir = path.join(tmp, 'repo', 'scripts'), ldir = path.join(tmp, 'repo', 'public', 'apps', NAME);
+    fs.mkdirSync(sdir, { recursive: true }); fs.mkdirSync(ldir, { recursive: true });
+    const script = path.join(sdir, 'backup-artifact.sh');
+    fs.writeFileSync(script, w.backup, { mode: 0o755 });
+    fs.writeFileSync(path.join(ldir, NAME + '-lib.js'), w.libSrc);
+    const root = path.join(tmp, 'root'), pull = path.join(tmp, 'pull'), rec = path.join(pull, 'records');
+    fs.mkdirSync(rec, { recursive: true });
+    const env = Object.assign({}, process.env, { TSM_BACKUP_ROOT: root, TSM_BACKUP_CLOUD: '-', TSM_BACKUP_NOTIFY: '0' });
+    const put = (id, input, order) => fs.writeFileSync(path.join(rec, id + '.json'), JSON.stringify({ title: 't', input, options: {}, savedAt: 'S', order }));
+    const run = (n) => spawnSync('sh', [script, pull, String(n)], { env, encoding: 'utf8' }).status;
+    const backups = () => (fs.existsSync(root) ? fs.readdirSync(root).filter((f) => new RegExp('^' + NAME + '-artifact-.*\\.json$').test(f)).sort() : []);
+    const newest = () => JSON.parse(fs.readFileSync(path.join(root, backups().slice(-1)[0]), 'utf8'));
+    const bad = [];
+    if (run(0) !== 0 || backups().length !== 0) bad.push('空的清單寫出了備份檔，或沒有 exit 0');
+    put('r2', 'va jra', 20); put('r1', 'o;m', 10);
+    if (run(2) !== 0 || backups().length !== 1) bad.push('兩筆的清單沒有備份成功');
+    else if (newest().records.map((r) => r.id + ':' + r.input).join(' ') !== 'r1:o;m r2:va jra' || newest().app !== NAME) bad.push('備份檔的內容或順序不對');
+    if (fs.readdirSync(rec).length !== 0) bad.push('取回來的檔沒有清掉（下一次會混進來）');
+    // ⚠️ 不能只數檔案：檔名只到秒，同一秒內另存會蓋掉同名的那一份、數量不變 ⇒ 比檔案裡的 pulledAt（毫秒）
+    const before = backups().length === 1 ? newest().pulledAt : '';
+    put('r2', 'va jra', 20); put('r1', 'o;m', 10);
+    if (run(2) !== 0 || backups().length !== 1 || newest().pulledAt !== before) bad.push('內容相同卻另存了一份');
+    put('r1', 'o;m', 10);
+    if (run(2) !== 1 || backups().length !== 1) bad.push('檔數對不上卻沒有失敗');
+    put('r1', 'o;m', 10); fs.writeFileSync(path.join(rec, 'bad.json'), JSON.stringify({ title: 'x', order: 5 }));
+    if (run(2) !== 1 || backups().length !== 1 || newest().count !== 2) bad.push('不合格的文件沒有被擋下，或動到了既有備份');
+    if (run(0) !== 0 || backups().length !== 1 || newest().count !== 2) bad.push('之後空的清單動到了既有備份');
+    return bad.length ? 'FAIL: ' + bad.join('、') : true;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ㊱ 記號列上每一顆鍵的字形（含載體點圈），**隨附的那兩支字型都要畫得出來**——直接讀字型檔的 cmap，不看畫面。
+//    ⚠️ 這件事在 Mac 上用眼睛看不出來：系統自己有藏文與悉曇字型，隨附的那支缺字時畫面上照樣有字（系統後備接走）；
+//       手機上的後備是另一套（或沒有），缺的那一格會是另一種字形或豆腐（bonji-mobile 加「符號」組時量像素量不出來，才改成讀字型）。
+//    藏文字形要在 Noto Serif Tibetan 裡（不可以靠悉曇那支接）；唯一借用的 U+115C1 要在 Noto Sans Siddham 裡。
+function cmapOf(buf) {
+  if (buf.toString('latin1', 0, 4) === 'wOF2') {
+    const numTables = buf.readUInt16BE(12);
+    let p = 48;
+    const b128 = () => { let v = 0; for (let i = 0; i < 5; i++) { const c = buf[p++]; v = (v << 7) | (c & 0x7f); if (!(c & 0x80)) return v >>> 0; } throw new Error('UIntBase128 讀不出來'); };
+    const tables = [];
+    for (let i = 0; i < numTables; i++) {
+      const flags = buf[p++], idx = flags & 0x3f, ver = flags >> 6;
+      if (idx === 63) p += 4;                       // 不在已知清單裡的 tag：後面跟 4 個位元組
+      const orig = b128();
+      // glyf(10)／loca(11) 的 transform 版本 0＝有轉換；其餘的表非 0 才有 ⇒ 有轉換的多一個 transformLength
+      const transformed = (idx === 10 || idx === 11) ? ver === 0 : ver !== 0;
+      tables.push({ idx, len: transformed ? b128() : orig });
+    }
+    const data = zlib.brotliDecompressSync(buf.subarray(p, p + buf.readUInt32BE(20)));
+    let off = 0;
+    for (const t of tables) { if (t.idx === 0) return data.subarray(off, off + t.len); off += t.len; }   // 0 ＝ cmap
+    throw new Error('woff2 裡沒有 cmap');
+  }
+  const n = buf.readUInt16BE(4);                    // sfnt（TTF）：表目錄從第 12 個位元組起，每筆 16 個位元組
+  for (let i = 0; i < n; i++) {
+    const r = 12 + i * 16;
+    if (buf.toString('latin1', r, r + 4) === 'cmap') { const o = buf.readUInt32BE(r + 8); return buf.subarray(o, o + buf.readUInt32BE(r + 12)); }
+  }
+  throw new Error('字型裡沒有 cmap');
+}
+function coverage(buf) {
+  const cmap = cmapOf(buf);
+  const set = new Set();
+  for (let i = 0, n = cmap.readUInt16BE(2); i < n; i++) {
+    const so = cmap.readUInt32BE(4 + i * 8 + 4), fmt = cmap.readUInt16BE(so);
+    if (fmt === 12) {
+      for (let g = 0, ng = cmap.readUInt32BE(so + 12); g < ng; g++) {
+        const a = cmap.readUInt32BE(so + 16 + g * 12), b = cmap.readUInt32BE(so + 20 + g * 12), gid = cmap.readUInt32BE(so + 24 + g * 12);
+        for (let c = a; c <= b; c++) if (gid + (c - a) !== 0) set.add(c);
+      }
+    } else if (fmt === 4) {
+      const segX2 = cmap.readUInt16BE(so + 6), endO = so + 14, startO = endO + segX2 + 2, deltaO = startO + segX2, rangeO = deltaO + segX2;
+      for (let s = 0; s < segX2; s += 2) {
+        const end = cmap.readUInt16BE(endO + s), start = cmap.readUInt16BE(startO + s), delta = cmap.readInt16BE(deltaO + s), ro = cmap.readUInt16BE(rangeO + s);
+        for (let c = start; c <= end && c !== 0xFFFF; c++) {
+          let gid;
+          if (ro === 0) gid = (c + delta) & 0xFFFF;
+          else { const g = cmap.readUInt16BE(rangeO + s + ro + (c - start) * 2); gid = g === 0 ? 0 : (g + delta) & 0xFFFF; }
+          if (gid !== 0) set.add(c);
+        }
+      }
+    }
+  }
+  if (!set.size) throw new Error('cmap 讀不出任何碼位');
+  return set;
+}
+const BORROWED = [0x115C1];   // 藏文欄借用的悉曇記號（~ 與 --）
+check('㊱ 隨附的字型畫得出記號列上每一個字形', (w) => {
+  const tib = coverage(w.fontTibetan), sid = coverage(w.fontSiddham);
+  // 對照組：讀法壞掉時（全部回 true／全部回 false）這幾行會先紅
+  if (!tib.has(0x0F40) || !tib.has(0x25CC)) return 'FAIL: 對照組——藏文字型裡應該有 U+0F40（ka）與 U+25CC（點圈）';
+  if (tib.has(0x5B57) || tib.has(0x115C1)) return 'FAIL: 對照組——藏文字型裡不該有 U+5B57（漢字）或 U+115C1（悉曇記號）';
+  if (!sid.has(0x115C1) || sid.has(0x0F40)) return 'FAIL: 對照組——悉曇字型應該有 U+115C1、不該有 U+0F40';
+  const miss = [];
+  let n = 0;
+  for (const id of w.Lib.KEYSET_IDS) {
+    for (const k of w.Lib.keysFromAssist(w.assist, id)) {
+      n++;
+      for (const ch of k.glyph) {
+        const cp = ch.codePointAt(0);
+        const ok = BORROWED.includes(cp) ? sid.has(cp) : tib.has(cp);
+        if (!ok) miss.push(id + ':' + k.label + ' U+' + cp.toString(16).toUpperCase());
+      }
+    }
+  }
+  if (n < 100) return 'FAIL: 只檢查到 ' + n + ' 顆鍵（應有 100 顆以上）';
+  // 輸出欄也會畫到的幾個不在記號列上的字：① 的向量（去掉全形空格與一般空白——那不需要字形）
+  for (const [, t] of VECTORS) for (const ch of t) {
+    const cp = ch.codePointAt(0);
+    if (cp === 0x3000 || cp === 0x20) continue;
+    if (!(BORROWED.includes(cp) ? sid.has(cp) : tib.has(cp))) miss.push('向量 U+' + cp.toString(16).toUpperCase());
+  }
+  return miss.length ? 'FAIL: 字型缺 ' + miss.join('、') : true;
+});
+
+/* ---------- 工具 ---------- */
+function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function walk(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) return e.name === 'node_modules' || e.name === '.git' ? [] : walk(p);
+    return [p];
+  });
+}
+
+async function run(world, quiet) {
+  const res = [];
+  for (const c of CHECKS) {
+    let r;
+    try { r = await c.fn(world); } catch (e) { r = 'FAIL: ' + e.message; }
+    res.push({ name: c.name, r });
+    if (!quiet) console.log((r === true ? 'PASS' : r === SKIP ? 'SKIP' : 'FAIL') + '  ' + c.name + (typeof r === 'string' ? '  — ' + r : ''));
+  }
+  return res;
+}
+
+/* ---------- 反向驗證：每一種改壞都必須讓指定的那一條 FAIL ---------- */
+const catOf = (w, id) => w.assist.categories.find((c) => c.id === id);
+const entry = (w, id, code) => catOf(w, id).entries.find((e) => e.code === code);
+const wrapConvert = (w, fn) => { const K = w.Converter; w.Converter = class extends K { convert(i) { return fn(super.convert(i), i, this.options); } }; };
+const MUTANTS = [
+  ['①', '拉丁轉寫被改', (w) => wrapConvert(w, (r) => Object.assign({}, r, { latin: r.latin.toUpperCase() }))],
+  ['①', '兩個空格不再是 tsheg', (w) => wrapConvert(w, (r) => Object.assign({}, r, { tibetan: r.tibetan.split(TSHEG).join('') }))],
+  ['①', '三個空格沒有變成全形空格', (w) => wrapConvert(w, (r) => Object.assign({}, r, { tibetan: r.tibetan.split(C(0x3000)).join(TSHEG) }))],
+  ['②', '子音 ka 的字形換成 kha', (w) => { entry(w, 'consonant', 'ka').char = C(0x0F41); }],
+  ['②', '母音 ii 的記法改成 i', (w) => { entry(w, 'vowel', 'ii').code = 'i'; }],
+  ['②', '下加輔音 y 的字形換成固定形', (w) => { entry(w, 'subjoined', 'y').char = C(0x0FBB); }],
+  ['②', '標點 | 的字形換成 nyis shad', (w) => { entry(w, 'punct', '|').char = C(0x0F0E); }],
+  ['②', '轉換器整個壞掉（藏文一律回空字串）', (w) => wrapConvert(w, (r) => Object.assign({}, r, { tibetan: '' }))],
+  ['②', 'lib 把記法轉成大寫（KH 下大小寫有意義）', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => Object.assign({}, k, { ins: k.ins.toUpperCase() })); }],
+  ['②', 'lib 沒有加載體', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => Object.assign({}, k, { glyph: k.glyph.replace(C(0x25CC), '') })); }],
+  ['②', '每一格都沒有記法（空的比對）', (w) => { for (const c of w.assist.categories) for (const e of c.entries) { e.alt = e.alt || 'x'; e.code = ''; } }],
+  ['③', '把打得出來的 y 標成不可插入', (w) => { const e = entry(w, 'subjoined', 'y'); e.alt = 'y'; e.code = ''; }],
+  ['③', 'lib 替固定形編了一個記法', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => (k.ins ? k : Object.assign({}, k, { ins: 'y' }))); }],
+  ['③', '控制器把空的記法也插進去', (w) => { w.js = w.js.replace("      if (!ins) {   // 固定形", "      if (false) {   // 固定形"); }],
+  ['③', '沒有記法的鍵看起來與一般的鍵一樣', (w) => { w.js = w.js.replace("'key' + (k.ins ? '' : ' key-noinput')", "'key'"); }],
+  ['④', 'insertAt 游標算錯', (w) => { const f = w.Lib.insertAt; w.Lib.insertAt = (...a) => { const r = f(...a); return { value: r.value, caret: r.caret - 1 }; }; }],
+  ['④', 'insertAt 把插入的字去頭尾空白（tsheg 鍵變成插入空字串）', (w) => { const f = w.Lib.insertAt; w.Lib.insertAt = (v, s, e, t) => f(v, s, e, String(t).trim()); }],
+  ['⑤', 'shellBox 忽略 offsetTop', (w) => { const f = w.Lib.shellBox; w.Lib.shellBox = (m) => { const r = f(m); return r && { top: 0, height: r.height }; }; }],
+  ['⑥', '網址列收合被當成鍵盤', (w) => { w.Lib.keyboardOpen = (b, h) => b - h >= 60; }],
+  ['⑦', '讀回的選項不驗證', (w) => { w.Lib.normalizeOptions = (o) => Object.assign({}, w.Lib.DEFAULT_OPTIONS, o || {}); }],
+  ['⑧', '輸入搬到輸出上面', (w) => { w.html = w.html.replace('id="out-pane"', 'id="__tmp__"').replace('id="tsm-input"', 'id="out-pane"').replace('id="__tmp__"', 'id="tsm-input"'); }],
+  ['⑨', '整頁又可以捲', (w) => { w.css = w.css.replace(/(html,\s*body\s*\{[^}]*)overflow:\s*hidden/, '$1overflow: auto'); }],
+  ['⑩', '字級降到 14px', (w) => { w.css = w.css.replace(/--ctl-font:\s*\d+px/, '--ctl-font: 14px'); }],
+  ['⑪', '記號列不擋 mousedown', (w) => { w.js = w.js.replace("$keybar.addEventListener('mousedown'", "$keybar.addEventListener('pointerup'"); }],
+  ['⑪', '切換鈕不擋 mousedown', (w) => { w.js = w.js.replace("keysetBtn.addEventListener('mousedown'", "keysetBtn.addEventListener('pointerup'"); }],
+  ['⑫', '改回 Materialize 自製下拉', (w) => { w.js += '\nM.FormSelect.init(document.querySelectorAll("select"));'; }],
+  ['⑬', '輸入框允許自動大寫', (w) => { w.html = w.html.replace('autocapitalize="off"', 'autocapitalize="sentences"'); }],
+  ['⑭', '少一語的 key', (w) => { delete w.locales.ja['toast.inputCleared']; }],
+  ['⑭', 'HTML 用了未定義的 key', (w) => { w.html = w.html.replace('data-i18n="opt.done"', 'data-i18n="opt.finish"'); }],
+  ['⑭', '少了 keyset.subjoined 的文案', (w) => { delete w.locales['zh-Hant']['keyset.subjoined']; delete w.locales.en['keyset.subjoined']; delete w.locales.ja['keyset.subjoined']; }],
+  ['⑭', '少了「對照表載不到」的文案', (w) => { delete w.locales['zh-Hant']['out.tableFail']; delete w.locales.en['out.tableFail']; delete w.locales.ja['out.tableFail']; }],
+  ['⑭', '紀錄的 toast 用了未定義的 key', (w) => { w.js = w.js.replace("recToast('rec.toast.replaced'", "recToast('rec.toast.replacedX'"); }],
+  ['⑮', '共用文案漂掉', (w) => { w.locales.en['tool.lang'] = 'Switch language'; }],
+  ['⑯', 'CSS 多了一條 local()', (w) => { w.css += "\n@font-face { font-family: 'X'; src: local('Jomolhari'); }"; }],
+  ['⑲', '控制器直接 import 藏文核心', (w) => { w.js = 'import { ascii2tibetan } from "./tibetan-core.js";\n' + w.js; }],
+  ['⑲', '控制器直接 import 引擎', (w) => { w.js = 'import { ascii2siddham } from "./vendor/bonji-input/siddham.js";\n' + w.js; }],
+  ['⑳', '安全區改回墊在頁首', (w) => { w.css = w.css.replace(/(\.topbar\s*\{[^}]*?)padding: 0 4px 0 16px;/, '$1padding: env(safe-area-inset-top, 0px) 4px 0 16px;'); }],
+  ['㉑', '切換鈕跑到清除鈕左邊', (w) => { w.html = w.html.replace('id="clear-input"', 'id="__c__"').replace('id="keyset-toggle"', 'id="clear-input"').replace('id="__c__"', 'id="keyset-toggle"'); }],
+  ['㉒', '改回上下排', (w) => { w.css = w.css.replace(/(\.out-pane\s*\{[^}]*flex-direction:\s*)row/, '$1column'); }],
+  ['㉒', '比例寫成 grow 2:1', (w) => { w.css = w.css.replace('flex: 0 0 calc((100% - 8px) * 2 / 3)', 'flex: 2 1 0'); }],
+  ['㉒', '文字不靠底', (w) => { w.css = w.css.replace(/(^\.out-text\s*\{[^}]*?)margin-top:\s*auto;/m, '$1'); }],
+  ['㉒', '聚焦時仍墊底部安全區', (w) => { w.css = w.css.replace('.shell:has(#tsm-input:focus) { padding-bottom: 0; }', ''); }],
+  ['㉓', '拉丁欄的複製列搬回頂端', (w) => { w.html = w.html.replace(/(<div class="out-block out-block-latin">\n)(        <div class="out-value">.*\n)((?:.*\n){6})/, '$1$3$2'); }],
+  ['㉔', '下加輔音排到子音前面', (w) => { w.Lib.KEYSET_IDS.splice(0, 5, 'vowel', 'subjoined', 'consonant', 'vowel_sign', 'punct'); }],
+  ['㉔', '標點組被拿掉', (w) => { w.Lib.KEYSET_IDS.pop(); }],
+  ['㉔', 'assist.json 多了一類而記號列沒有', (w) => { w.assist.categories.push({ id: 'extra', entries: [{ code: 'x', char: 'x' }] }); }],
+  ['㉔', '子音組被去重後少一格', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => (id === 'consonant' ? f(a, id).slice(1) : f(a, id)); }],
+  ['㉔', '三個固定形被濾掉（下加輔音剩 34 格）', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).filter((k) => k.ins); }],
+  ['㉔', 'tsheg 鍵的兩個空格被收成一個', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => (k.ins === '  ' ? Object.assign({}, k, { ins: ' ' }) : k)); }],
+  ['㉕', '加回悉曇欄', (w) => { w.html = w.html.replace('<div class="out-block out-block-latin">', '<div class="out-block"><div class="out-value"><div id="out-siddham" class="out-text"></div></div></div>\n      <div class="out-block out-block-latin">'); }],
+  ['㉕', '控制器把悉曇也放進輸出', (w) => { w.js = w.js.replace('    out.latin.textContent = r.latin;\n    renderRecCurrent();\n    // 游標在結尾', '    out.latin.textContent = r.latin + r.siddham;\n    renderRecCurrent();\n    // 游標在結尾'); }],
+  ['㉕', 'JSON 輸出多了悉曇', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (items, c, t) => { const e = f(items, c, t); e.records.forEach((r) => { if (r.output) r.output.siddham = 'x'; }); return e; }; }],
+  ['㉖', '對照表還沒載好就轉', (w) => { w.js = w.js.replace('    if (!state.ready) {\n      // 對照表還沒載好', '    if (false) {\n      // 對照表還沒載好'); }],
+  ['㉖', '載不到時輸出欄留白', (w) => { w.js = w.js.replace("state.tableFailed ? I18n.t('out.tableFail', { m: state.tableFailed }) : ''", "''"); }],
+  ['㉖', '載好之後沒有補轉', (w) => { w.js = w.js.replace('    }).then(function () {\n      convert();\n      renderRecords();\n    });', '    });'); }],
+  ['㉖', '清單不等對照表', (w) => { w.js = w.js.replace('    if (!state.ready && !state.tableFailed) {\n      list.textContent', '    if (false) {\n      list.textContent'); }],
+  ['㉗', '字形框改回行高 1.25（上方符號被裁掉）', (w) => { w.css = w.css.replace(/(^\.key-glyph\s*\{[^}]*?line-height:\s*)2;/m, '$11.25;'); }],
+  ['㉗', '鍵高改回 46px', (w) => { w.css = w.css.replace(/(^\.keybar \.key\s*\{[^}]*?[^-]height:\s*)54px/m, '$146px'); }],
+  ['㉗', '字號改用 rem', (w) => { w.css = w.css.replace(/(^\.key-glyph\s*\{[^}]*?font-size:\s*)18px/m, '$11.3rem'); }],
+  ['㉘', '標題被當成鍵（同名的覆寫前一筆）', (w) => { w.Lib.addRecord = (items, rec) => { const i = items.findIndex((x) => x.title === rec.title); return i >= 0 ? items.map((x, k) => (k === i ? rec : x)) : items.concat([rec]); }; }],
+  ['㉘', '空標題不給加', (w) => { const f = w.Lib.makeRecord; w.Lib.makeRecord = (t, i, o, s) => (String(t || '').trim() ? f(t, i, o, s) : null); }],
+  ['㉘', 'part 不分標題（等於 seq）', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (...a) => { const e = f(...a); e.records.forEach((r) => { r.part = r.seq; }); return e; }; }],
+  ['㉘', '取代把那一筆搬到最後', (w) => { w.Lib.replaceRecord = (items, i, rec) => items.filter((_, k) => k !== i).concat([rec]); }],
+  ['㉙', '每一筆都用第一筆的選項', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (items, c, t) => f(items, (i) => c(i, items[0].options), t); }],
+  ['㉙', '轉不出來的那一筆被安靜地丟掉', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (...a) => { const e = f(...a); e.records = e.records.filter((r) => r.output); e.count = e.records.length; return e; }; }],
+  ['㉙', '控制器共用畫面上那個轉換器', (w) => { w.js = w.js.replace('var r = new TibetanSiddhamConverter(options).convert(input);', 'var r = converter.convert(input);'); }],
+  ['㉙', '碼位改成拉丁那一欄的', (w) => { w.js = w.js.replace('codepoints: r.codepoints.tibetan };', 'codepoints: r.codepoints.latin };'); }],
+  ['㉚', '讀回的清單不驗證', (w) => { w.Lib.normalizeStore = (s) => s || { title: '', items: [] }; }],
+  ['㉚', '讀回的 id 不驗證（會被拿去當文件路徑）', (w) => { const f = w.Lib.normalizeStore; w.Lib.normalizeStore = (s) => { const o = f(s); ((s && s.items) || []).forEach((r, i) => { if (o.items[i] && r && r.id) o.items[i].id = r.id; }); return o; }; }],
+  ['㉛', '加入鈕不擋 mousedown', (w) => { w.js = w.js.replace("quick.addEventListener('mousedown'", "quick.addEventListener('pointerup'"); }],
+  ['㉛', '加入鈕搬到頁首', (w) => { const m = w.html.match(/          <a href="#!" id="rec-add-quick"[\s\S]*?<\/a>\n/); w.html = w.html.replace(m[0], '').replace('<a href="#!" id="open-options"', m[0] + '<a href="#!" id="open-options"'); }],
+  ['㉛', '標題的清除鈕不擋 mousedown', (w) => { w.js = w.js.replace("titleClear.addEventListener('mousedown'", "titleClear.addEventListener('pointerup'"); }],
+  ['㉛', '清除鈕包回 <label> 裡', (w) => { w.html = w.html.replace('<div class="rec-title-row">', '<label class="rec-title-row">').replace(/(id="rec-title-clear"[\s\S]*?<\/a>\n\s*)<\/div>/, '$1</label>'); }],
+  ['㉛', '標題欄字級寫死 16px', (w) => { w.css = w.css.replace(/(input\[type="text"\]\.rec-title\s*\{[^}]*font-size:\s*)var\(--ctl-font\)/, '$116px'); }],
+  ['㉛', '刪除改用 confirm()', (w) => { w.js = w.js.replace("if (!isArmed(act, i)) { arm(act, i, 'rec.toast.confirmRemove', { n: n }); return; }", "if (!confirm('delete?')) return;"); }],
+  ['㉛', 'JSON 排到標題欄上面', (w) => { w.html = w.html.replace('id="rec-title"', 'id="__t__"').replace('id="rec-json"', 'id="rec-title"').replace('id="__t__"', 'id="rec-json"'); }],
+  ['㉛', '標題欄有焦點時也更新鍵盤基準', (w) => { w.js = w.js.replace(' && document.activeElement !== $recTitle) state.baseline', ') state.baseline'); }],
+  ['㉜', '存完不讀回比對', (w) => { w.js = w.js.replace('ok = localStorage.getItem(REC_KEY) === text;', 'ok = true;'); }],
+  ['㉜', '下載檔名不補零', (w) => { w.Lib.exportFilename = (d) => NAME + '-' + d.getFullYear() + (d.getMonth() + 1) + d.getDate() + d.getHours() + d.getMinutes() + d.getSeconds() + '.json'; }],
+  ['㉝', '清除標題又去寫清單', (w) => { w.js = w.js.replace("    state.rec.title = '';\n    saveTitle();", "    state.rec.title = '';\n    saveItems();\n    saveTitle();"); }],
+  ['㉝', '關掉面板時整份重寫', (w) => { w.js = w.js.replace('disarm(); saveTitle(); }   //', 'disarm(); saveItems(); saveTitle(); }   //'); }],
+  ['㉝', '標題與清單又存回同一格', (w) => { w.js = w.js.replace("var REC_TITLE_KEY = '" + NAME + "-rec-title'", "var REC_TITLE_KEY = '" + NAME + "-records'"); }],
+  ['㉝', '清單裡又帶著標題整格寫', (w) => { w.js = w.js.replace('JSON.stringify({ items: state.rec.items })', 'JSON.stringify(state.rec)'); }],
+  ['㉝', '加入之前不看儲存區', (w) => { w.js = w.js.replace('    syncItems();   // 別的畫面記過新的', '    // 別的畫面記過新的'); }],
+  ['㉝', '刪除／取代不管別處改過', (w) => { w.js = w.js.replace("if (syncItems() === 'changed') {\n      disarm();\n      renderRecords();\n      recToast", "if (false) {\n      disarm();\n      renderRecords();\n      recToast"); }],
+  ['㉝', '讀不到被當成清單被清空', (w) => { w.Lib.storeDrift = (a, b) => (a === b ? 'same' : 'changed'); }],
+  ['㉞', '刪除被待確認的寫入帶回來', (w) => { const f = w.Lib.mergeRemote; w.Lib.mergeRemote = (re, put, del) => f(re, put, {}).filter((x) => !(del || {})[x.id] || (put || {})[x.id]); }],
+  ['㉞', '清單不排序（照資料庫給的順序）', (w) => { w.Lib.mergeRemote = (re, put, del) => re.filter((x) => !del[x.id]).map((x) => put[x.id] || x).concat(Object.keys(put).filter((id) => !re.some((x) => x.id === id) && !del[id]).map((id) => put[id])); }],
+  ['㉞', 'id 漏進 JSON 輸出', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (items, c, t) => { const e = f(items, c, t); e.records.forEach((r, i) => { r.id = items[i].id; }); return e; }; }],
+  ['㉞', '同步改成整份清單寫一份文件', (w) => { w.remote = w.remote.replace("return db.collection(COL).doc(rec.id).set({", "return db.doc('state/list').set({ items: [rec] }); db.collection(COL).doc(rec.id).set({"); }],
+  ['㉞', '資料庫作主時又寫回 localStorage', (w) => { w.js = w.js.replace("    if (remoteOn()) return;   // 同上", "    // 同上"); }],
+  ['㉞', '規則放寬成任何看得到的人都能讀', (w) => { w.build = w.build.replace('"read": "owner"', '"read": "view"'); }],
+  ['㉞', '同步那一支掛的名字與控制器等的不一樣', (w) => { w.remote = w.remote.replace('window.TibetanSiddhamMobileRemote = { start: start', 'window.BonjiMobileRemote = { start: start'); }],   // 換程式那一行；檔頭註解裡也有同一段字
+  ['㉟', '空的清單也寫一份（七天後把有內容的擠掉）', (w) => { w.backup = w.backup.replace('if [ "$FOUND" = "0" ]; then', 'if [ "$FOUND" = "never" ]; then'); }],
+  ['㉟', '不對帳檔數', (w) => { w.backup = w.backup.replace('if [ "$FOUND" != "$EXPECT" ]; then', 'if [ "$FOUND" = "never" ]; then'); }],
+  ['㉟', '驗證沒過照樣寫出', (w) => { w.backup = w.backup.replace('if (items.length !== raw.length) throw', 'if (false) throw'); }],
+  ['㉟', '內容相同也另存一份', (w) => { w.backup = w.backup.replace('same = !bits.length;', 'same = false;'); }],
+  ['㉟', '用完不清取回來的檔', (w) => { w.backup = w.backup.replace(/\ncleanup_pull\n\n# ─+ ④/, '\n\n# ④'); }],
+  ['㉟', '備份腳本去載 bonji-mobile 的 lib', (w) => { w.backup = w.backup.replace('const L = sb.TibetanSiddhamMobileLib;', 'const L = sb.BonjiMobileLib;'); }],
+  ['㊱', '標點組多一格字型沒有的字', (w) => { catOf(w, 'punct').entries.push({ code: 'zz', char: C(0x11600) }); const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id); }],
+  ['㊱', '藏文字型換成悉曇那一支', (w) => { w.fontTibetan = w.fontSiddham; }],
+  ['㊱', '悉曇字型換成藏文那一支（𑗁 畫不出來）', (w) => { w.fontSiddham = w.fontTibetan; }],
+  ['㊱', '字型檔壞掉（表目錄被清空）', (w) => { w.fontTibetan = Buffer.from(w.fontTibetan); w.fontTibetan.fill(0, 12, 12 + 16 * w.fontTibetan.readUInt16BE(4)); }]
+];
+
+async function selftest() {
+  let missed = 0;
+  for (const [id, desc, mutate] of MUTANTS) {
+    const w = await loadWorld();
+    mutate(w);
+    const res = await run(w, true);
+    const hit = res.find((r) => r.name.startsWith(id));
+    const caught = hit && typeof hit.r === 'string' && hit.r.startsWith('FAIL');
+    if (!caught) missed++;
+    console.log((caught ? 'CAUGHT ' : 'MISSED ') + id + '  ' + desc);
+  }
+  // 對照組：沒改壞的世界必須全綠（否則上面的 CAUGHT 可能只是它本來就紅）
+  const base = await run(await loadWorld(), true);
+  const baseRed = base.filter((r) => typeof r.r === 'string');
+  console.log(baseRed.length ? 'BASELINE RED: ' + baseRed.map((r) => r.name).join(', ') : 'baseline 全綠');
+  console.log(`\n${MUTANTS.length - missed}/${MUTANTS.length} 個注入被抓到`);
+  process.exit(missed || baseRed.length ? 1 : 0);
+}
+
+(async () => {
+  if (process.argv.includes('--selftest')) return selftest();
+  const res = await run(await loadWorld(), false);
+  const fail = res.filter((r) => typeof r.r === 'string').length;
+  const skip = res.filter((r) => r.r === SKIP).length;
+  console.log(`\n${res.length - fail - skip} PASS ／ ${fail} FAIL ／ ${skip} SKIP（共 ${res.length} 條）`);
+  process.exit(fail ? 1 : 0);
+})();

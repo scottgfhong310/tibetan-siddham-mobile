@@ -1,0 +1,34 @@
+# 依賴
+node_modules/
+
+# 系統檔
+.DS_Store
+Thumbs.db
+
+# 編輯器 / 工具
+.vscode/
+.claude/
+
+# 日誌
+*.log
+
+# Artifacts 版的建置產物（python3 artifact/build.py）
+artifact/dist/
+artifact/dist.files.json
+
+# ── 字型：deny-by-default（預設全擋，再逐支放行）──────────────────
+# 本 repo 是 **public**；字型是二進位著作物，收進來就是對全世界再散布。
+# 理由與兩種漏法代價不對稱的說明見 bonji 的 .gitignore（同一套規則）：
+# **擋錯了會被發現，放錯了不會**——所以預設要擋。
+*.ttf
+*.otf
+*.ttc
+*.woff
+*.woff2
+*.eot
+
+# 放行清單：只放授權明確允許再散布的（兩支都是 SIL OFL 1.1，授權全文在 fonts/*-OFL.txt）。
+# Noto Serif Tibetan：藏文輸出與記號列的字形。
+# Noto Sans Siddham：只為藏文欄借用的 𑗁（U+115C1）帶著——本 app 不輸出悉曇。
+!/public/apps/tibetan-siddham-mobile/fonts/NotoSerifTibetan-Regular.ttf
+!/public/apps/tibetan-siddham-mobile/fonts/NotoSansSiddham-Regular.woff2
