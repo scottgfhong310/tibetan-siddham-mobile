@@ -168,7 +168,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     keys.forEach(function (k) {
       var b = document.createElement('button');
       b.type = 'button';
-      // 沒有記法的格（下加輔音裡的三個固定形）：轉換器打不出來，留著是為了辨認——按下去只出提示（bindKeybar）
+      // 沒有記法的格（資料裡既沒有 code 也沒有 alt；現在 0 格——三個固定形自 2026-10-12 起插入 y／r／v，見 lib）：按下去只出提示（bindKeybar）
       b.className = 'key' + (k.ins ? '' : ' key-noinput');
       b.setAttribute('data-ins', k.ins);
       b.setAttribute('aria-label', k.ins ? k.label : I18n.t('keybar.noinput'));
@@ -216,7 +216,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       if (!b) return;
       e.preventDefault();
       var ins = b.getAttribute('data-ins');
-      if (!ins) {   // 固定形：沒有對應的記法，不插入任何東西
+      if (!ins) {   // 沒有記法的格：不插入任何東西
         M.toast({ html: _esc(I18n.t('keybar.noinput')), classes: 'grey', displayLength: 1800 });
         return;
       }

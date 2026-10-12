@@ -6,7 +6,7 @@
  *
  *   KEYSET_IDS                 記號列的五組（切換順序）：'vowel'（母音）→ 'consonant'（子音）→ 'subjoined'（下加輔音）
  *                              → 'vowel_sign'（元音符號）→ 'punct'（標點）
- *   keysFromAssist(assist, id) → [{ ins, glyph, label }] —— 由 tibetan-siddham 的 data/assist.json 推出該組的鍵
+ *   keysFromAssist(assist, id) → [{ ins, glyph, label, variant }] —— 由 tibetan-siddham 的 data/assist.json 推出該組的鍵
  *   normalizeKeyset(id)        → 白名單版本（從 localStorage 讀回來的不可信）
  *   insertAt(value, s, e, t)   → { value, caret } —— 把 t 插在選取範圍 [s, e) 上
  *   shellBox(m)                → { top, height } —— 外殼該貼齊的可見範圍（鍵盤彈出後）
@@ -56,8 +56,12 @@
    *    在 ISO 15919 與 Kyoto-Harvard 兩種輸入法下是否同字，由 verify.js 第 ③ 條逐一驗——記號列因此只要一套。
    * 類別上的 `carrier`（點圈 ◌）：元音符號與下加輔音是組合字元，單獨畫會浮空 ⇒ 字形前面加載體。
    *    「哪一類要加」寫在資料裡，這裡不判斷碼位範圍（同 tibetan-siddham 的 assist.js）。
-   * 沒有記法的格（下加輔音裡三個固定形 U+0FBA／U+0FBB／U+0FBC，轉換器打不出來）：`ins` 是空字串，
-   *    鍵照樣在（供辨認），按下去只出提示、不插入任何東西。**不去重**——這三格的記法都是空的。 */
+   * ⭐ **下加輔音裡的三個固定形插入它們所屬的那個音的記法**〔owner 2026-10-12：ྻ（U+0FBB）＝`y`、ྼ（U+0FBC）＝`r`、ྺ（U+0FBA）＝`v`〕。
+   *    資料裡這三格的 `code` 是空的（轉換器打不出固定形；tibetan-siddham 桌機版面板因此標成不可插入），而 `alt` 寫著它是哪個音的異體
+   *    ⇒ **沒有 `code` 的格用 `alt` 當記法**，並標 `variant: true`。這是本 app 的決定，資料（複製件）沒有動。
+   *    ⚠️ `variant` 的鍵：按下去插入的記法轉出來的是**一般的下加形**（`y` → ྱ），不是鍵上畫的固定形——鍵上的字形是用來認的。
+   *    **不去重**：同一個記法因此有兩顆鍵（ྱ 與 ྻ 都是 `y`），同 bonji-mobile 的上／下接續（一個字形一顆鍵）。
+   * 既沒有 `code` 也沒有 `alt` 的格（現在 0 格）：`ins` 是空字串，鍵照樣在，按下去只出提示、不插入任何東西。 */
   var KEYSET_IDS = ['vowel', 'consonant', 'subjoined', 'vowel_sign', 'punct'];
 
   function keysFromAssist(assist, id) {
@@ -70,9 +74,12 @@
     var out = [];
     cat.entries.forEach(function (e) {
       if (!e || typeof e.code !== 'string' || typeof e.char !== 'string') return;
+      // 沒有 code 的格（固定形）用 alt 當記法〔owner 2026-10-12〕；variant＝鍵上的字形不是這個記法轉出來的那個字
+      var variant = !e.code && typeof e.alt === 'string' && !!e.alt;
+      var ins = variant ? e.alt : e.code;
       // label：鍵上印的字。兩個空格看不見 ⇒ 資料給它一個可見的標示（␣␣）；沒有記法的格印一個中點
-      var label = typeof e.label === 'string' && e.label ? e.label : (e.code || '·');
-      out.push({ ins: e.code, glyph: carrier + e.char, label: label });
+      var label = typeof e.label === 'string' && e.label ? e.label : (ins || '·');
+      out.push({ ins: ins, glyph: carrier + e.char, label: label, variant: variant });
     });
     return out;
   }

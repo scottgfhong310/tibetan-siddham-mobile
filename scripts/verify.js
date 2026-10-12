@@ -152,7 +152,7 @@ check('② 記號列每一鍵：記法餵給防腐層，藏文輸出＝鍵上的
     if (!keys.length) { bad.push(id + ' 0 個鍵'); continue; }
     const carrier = carrierOf(w.assist, id);
     for (const k of keys) {
-      if (!k.ins) continue;                               // 沒有記法的格由 ③ 管
+      if (!k.ins || k.variant) continue;                  // 沒有記法的格、與「鍵上的字形不是它轉出來的字」的固定形，由 ③ 管
       if (carrier && !k.glyph.startsWith(carrier)) { bad.push(id + ':' + k.label + ' 的字形沒有載體'); continue; }
       const ex = expectation(id, k.ins, k.glyph.slice(carrier.length), w.signs);
       if (!ex) { bad.push(id + '：不認得的類別，沒有驗證方式'); break; }
@@ -167,23 +167,36 @@ check('② 記號列每一鍵：記法餵給防腐層，藏文輸出＝鍵上的
   return bad.length ? 'FAIL: ' + bad.slice(0, 8).join('；') : true;
 });
 
-// ③ 沒有記法的格（下加輔音裡的三個固定形 U+0FBA／0FBB／0FBC）：轉換器打不出來，留著是為了辨認。
-//    (a) lib 給它空的 ins（不替它編一個記法）；(b) 它標的那個記法（alt）真的轉不出它；(c) 控制器遇到空的 ins 只出提示、不插入。
-check('③ 沒有記法的三格：不插入、而且真的打不出來', (w) => {
+// ③ 下加輔音裡的三個固定形插入它們所屬的那個音的記法〔owner 2026-10-12：ྻ（U+0FBB）＝y、ྼ（U+0FBC）＝r、ྺ（U+0FBA）＝v〕。
+//    期望值寫死在這裡（取自 owner 的指示，不取自 assist.json 的 alt）。資料裡這三格沒有 code——轉換器打不出固定形——
+//    所以 (a) lib 以 alt 當記法並標 variant；(b) 那個記法是真的記法：轉出來的是**同一個音的一般下加形**（兩種輸入法）；
+//    (c) 轉換器仍然打不出固定形本身（哪天打得出來了，variant 這個標記與 ② 的豁免就該拿掉）；
+//    (d) variant 只有這三格；(e) 真的沒有記法的格（現在 0 格）：lib 回空的 ins、控制器只出提示不插入、鍵畫淡。
+const FIXED_FORMS = [[0x0FBB, 'y', 0x0FB1], [0x0FBC, 'r', 0x0FB2], [0x0FBA, 'v', 0x0FAD]];   // [固定形, 記法, 一般的下加形]
+check('③ 三個固定形插入 y／r／v（owner 指定）；真的沒有記法的格不插入', (w) => {
   const bad = [];
-  const keys = w.Lib.keysFromAssist(w.assist, 'subjoined').filter((k) => !k.ins);
-  const got = keys.map((k) => k.glyph.slice(carrierOf(w.assist, 'subjoined').length)).sort().join('');
-  const want = [C(0x0FBA), C(0x0FBB), C(0x0FBC)].sort().join('');
-  if (got !== want) bad.push('沒有記法的格是 ' + cps(got) + '（應為那三個固定形）');
-  for (const id of w.Lib.KEYSET_IDS) if (id !== 'subjoined' && w.Lib.keysFromAssist(w.assist, id).some((k) => !k.ins)) bad.push(id + ' 也有沒有記法的格');
-  const sub = (w.assist.categories || []).find((c) => c.id === 'subjoined') || { entries: [] };
-  for (const e of sub.entries) {
-    if (e.code) continue;
-    if (!e.alt) { bad.push(cps(e.char) + ' 沒有 alt'); continue; }
+  const carrier = carrierOf(w.assist, 'subjoined');
+  const keys = w.Lib.keysFromAssist(w.assist, 'subjoined');
+  for (const [fixed, ins, plain] of FIXED_FORMS) {
+    const k = keys.find((x) => x.glyph === carrier + C(fixed));
+    if (!k) { bad.push(cps(C(fixed)) + ' 不在下加輔音裡'); continue; }
+    if (k.ins !== ins || k.label !== ins) bad.push(cps(C(fixed)) + ' 插入 ' + JSON.stringify(k.ins) + '（應為 ' + ins + '）');
+    if (!k.variant) bad.push(cps(C(fixed)) + ' 沒有標成 variant（② 會拿它的字形去比轉換結果）');
     for (const m of ['ISO15919', 'KH']) {
-      if (new w.Converter({ inputMethod: m }).convert('m' + e.alt + 'a').tibetan === MA + e.char) bad.push(cps(e.char) + ' 其實打得出來（' + e.alt + '）');
+      const got = new w.Converter({ inputMethod: m }).convert('m' + ins + 'a').tibetan;
+      if (got !== MA + C(plain)) bad.push(ins + '（' + m + '）轉出 ' + cps(got) + '（應為 ' + cps(MA + C(plain)) + '）');
+      if (got === MA + C(fixed)) bad.push(ins + ' 其實打得出固定形——variant 的前提不成立了');
     }
   }
+  for (const id of w.Lib.KEYSET_IDS) {
+    for (const k of w.Lib.keysFromAssist(w.assist, id)) {
+      if (k.variant && !(id === 'subjoined' && FIXED_FORMS.some(([f]) => k.glyph === carrier + C(f)))) bad.push(id + ':' + k.label + ' 被標成 variant');
+      if (!k.ins) bad.push(id + ' 有沒有記法的格（' + cps(k.glyph) + '）');
+    }
+  }
+  // 真的沒有記法的格：lib 不替它編記法
+  const none = w.Lib.keysFromAssist({ categories: [{ id: 'subjoined', carrier: carrier, entries: [{ code: '', char: C(0x0FBB) }] }] }, 'subjoined')[0];
+  if (!none || none.ins !== '' || none.variant) bad.push('沒有 code 也沒有 alt 的格被編了記法');
   if (!/var ins = b\.getAttribute\('data-ins'\);\s*if \(!ins\) \{[\s\S]{0,260}?return;\s*\}\s*insert\(ins\);/.test(w.js)) bad.push('控制器沒有先擋掉空的記法');
   if (!/'key' \+ \(k\.ins \? '' : ' key-noinput'\)/.test(w.js) || !/\.key-noinput\s*\{/.test(w.css)) bad.push('沒有記法的鍵看起來與可以插入的一樣');
   return bad.length ? 'FAIL: ' + bad.join('；') : true;
@@ -417,8 +430,8 @@ check('㉔ 記號列五組依序：母音 → 子音 → 下加輔音 → 元音
   if (cats !== w.Lib.KEYSET_IDS.slice().sort().join(',')) return 'FAIL: assist.json 的類別是 ' + cats + '（與記號列收的五類不同）';
   const counts = w.Lib.KEYSET_IDS.map((id) => w.Lib.keysFromAssist(w.assist, id).length);
   if (counts.join(',') !== '16,34,37,16,5') return 'FAIL: 各組鍵數 ' + counts.join(',') + '（應為 16,34,37,16,5 ＝ 108）';
-  // 鍵數相同的兩組（母音與元音符號都是 16）對調了，上面那一行看不出來 ⇒ 另外確認第 3 組真的是下加輔音（有那三個沒有記法的固定形）、第 4 組的字形帶載體
-  if (w.Lib.keysFromAssist(w.assist, w.Lib.KEYSET_IDS[2]).filter((k) => !k.ins).length !== 3) return 'FAIL: 第 3 組不是下加輔音';
+  // 鍵數相同的兩組（母音與元音符號都是 16）對調了，上面那一行看不出來 ⇒ 另外確認第 3 組真的是下加輔音（有那三個固定形）、第 4 組的字形帶載體
+  if (w.Lib.keysFromAssist(w.assist, w.Lib.KEYSET_IDS[2]).filter((k) => k.variant).length !== 3) return 'FAIL: 第 3 組不是下加輔音';
   if (!w.Lib.keysFromAssist(w.assist, w.Lib.KEYSET_IDS[3]).every((k) => k.glyph.startsWith(C(0x25CC)))) return 'FAIL: 第 4 組不是元音符號';
   const tsheg = w.Lib.keysFromAssist(w.assist, 'punct')[0];
   if (!tsheg || tsheg.ins !== '  ' || tsheg.glyph !== TSHEG || !tsheg.label.trim()) return 'FAIL: 標點組第一鍵不是 tsheg（兩個空格、鍵上有看得見的標示）';
@@ -824,9 +837,12 @@ const MUTANTS = [
   ['②', 'lib 把記法轉成大寫（KH 下大小寫有意義）', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => Object.assign({}, k, { ins: k.ins.toUpperCase() })); }],
   ['②', 'lib 沒有加載體', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => Object.assign({}, k, { glyph: k.glyph.replace(C(0x25CC), '') })); }],
   ['②', '每一格都沒有記法（空的比對）', (w) => { for (const c of w.assist.categories) for (const e of c.entries) { e.alt = e.alt || 'x'; e.code = ''; } }],
-  ['③', '把打得出來的 y 標成不可插入', (w) => { const e = entry(w, 'subjoined', 'y'); e.alt = 'y'; e.code = ''; }],
-  ['③', 'lib 替固定形編了一個記法', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => (k.ins ? k : Object.assign({}, k, { ins: 'y' }))); }],
-  ['③', '控制器把空的記法也插進去', (w) => { w.js = w.js.replace("      if (!ins) {   // 固定形", "      if (false) {   // 固定形"); }],
+  ['③', '固定形又變回不可插入（lib 不用 alt）', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => (k.variant ? Object.assign({}, k, { ins: '', label: C(0x00B7), variant: false }) : k)); }],
+  ['③', '固定形的記法對調（ྻ 插入 r）', (w) => { for (const e of catOf(w, 'subjoined').entries) { if (e.char === C(0x0FBB)) e.alt = 'r'; } }],
+  ['③', '固定形沒有標 variant', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => Object.assign({}, k, { variant: false })); }],
+  ['③', '把一般的 y 也變成只有 alt 的格（多一個 variant）', (w) => { const e = entry(w, 'subjoined', 'y'); e.alt = 'y'; e.code = ''; }],
+  ['③', 'lib 替真的沒有記法的格編了一個記法', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => (k.ins ? k : Object.assign({}, k, { ins: 'y' }))); }],
+  ['③', '控制器把空的記法也插進去', (w) => { w.js = w.js.replace("      if (!ins) {   // 沒有記法的格", "      if (false) {   // 沒有記法的格"); }],
   ['③', '沒有記法的鍵看起來與一般的鍵一樣', (w) => { w.js = w.js.replace("'key' + (k.ins ? '' : ' key-noinput')", "'key'"); }],
   ['④', 'insertAt 游標算錯', (w) => { const f = w.Lib.insertAt; w.Lib.insertAt = (...a) => { const r = f(...a); return { value: r.value, caret: r.caret - 1 }; }; }],
   ['④', 'insertAt 把插入的字去頭尾空白（tsheg 鍵變成插入空字串）', (w) => { const f = w.Lib.insertAt; w.Lib.insertAt = (v, s, e, t) => f(v, s, e, String(t).trim()); }],
@@ -863,7 +879,7 @@ const MUTANTS = [
   ['㉔', '標點組被拿掉', (w) => { w.Lib.KEYSET_IDS.pop(); }],
   ['㉔', 'assist.json 多了一類而記號列沒有', (w) => { w.assist.categories.push({ id: 'extra', entries: [{ code: 'x', char: 'x' }] }); }],
   ['㉔', '子音組被去重後少一格', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => (id === 'consonant' ? f(a, id).slice(1) : f(a, id)); }],
-  ['㉔', '三個固定形被濾掉（下加輔音剩 34 格）', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).filter((k) => k.ins); }],
+  ['㉔', '三個固定形被濾掉（下加輔音剩 34 格）', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).filter((k) => !k.variant); }],
   ['㉔', 'tsheg 鍵的兩個空格被收成一個', (w) => { const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id).map((k) => (k.ins === '  ' ? Object.assign({}, k, { ins: ' ' }) : k)); }],
   ['㉕', '加回悉曇欄', (w) => { w.html = w.html.replace('<div class="out-block out-block-latin">', '<div class="out-block"><div class="out-value"><div id="out-siddham" class="out-text"></div></div></div>\n      <div class="out-block out-block-latin">'); }],
   ['㉕', '控制器把悉曇也放進輸出', (w) => { w.js = w.js.replace('    out.latin.textContent = r.latin;\n    renderRecCurrent();\n    // 游標在結尾', '    out.latin.textContent = r.latin + r.siddham;\n    renderRecCurrent();\n    // 游標在結尾'); }],

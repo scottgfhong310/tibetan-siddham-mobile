@@ -13,7 +13,7 @@
 ```bash
 npm install && npm start                 # → http://localhost:3000/apps/tibetan-siddham-mobile/
 npm run verify                           # 36 條契約檢查
-node scripts/verify.js --selftest        # 106 個反向注入，全部必須被抓到
+node scripts/verify.js --selftest        # 109 個反向注入，全部必須被抓到
 python3 artifact/build.py                # Artifacts 版 → artifact/dist/ ＋ artifact/dist.files.json（都不進版控）
 ```
 
@@ -49,7 +49,8 @@ public/apps/tibetan-siddham-mobile/
 6. **會聚焦的控制項字級不可小於 16px**（iOS 放大整頁）；現值 20px 是為了 Artifacts 版（第 ⑩ 條）。
 7. **記號列的鍵不要寫死**：由 `data/assist.json` 推出。lib 只寫死 `KEYSET_IDS`（收哪幾類、順序；第 ㉔ 條）。記法照資料原樣插入——**tsheg 鍵是兩個空格，一個都不能少**。
    ⭐ **順序是 owner 指定的**〔2026-10-12〕：母音 → 子音 → **下加輔音 → 元音符號** → 標點——**不是** `assist.json`（桌機版面板）的順序，不要「對齊資料」改回去。
-   三個固定形沒有記法：鍵畫淡、按了只出提示（第 ③ 條）。
+   ⭐ **三個固定形插入 `y`／`r`／`v`**〔owner 2026-10-12：ྻ＝y、ྼ＝r、ྺ＝v〕：資料裡它們沒有 `code`，lib 用 `alt` 當記法並標 `variant`（轉出來的是一般的下加形，不是鍵上的固定形）。
+   桌機版面板照舊不可插入，`assist.json` 沒有動——不要為了「對齊」改回去（第 ③ 條）。
 8. **鍵高 54px、字形 18px × 行高 2、輸出欄行高 2.1 都是量出來的**（DESIGN §6.1、§7）：藏文的上方符號與疊字比悉曇高，照 bonji-mobile 的數字會被裁掉。改字級要重量（第 ㉗ 條）。
 9. **上緣安全區墊在 `.shell` 上，不要墊在 `.topbar`**（第 ⑳ 條）；底部安全區以**焦點**判斷（第 ㉒ 條）。
 10. **不要加 `local()` 字型**：iOS 的網頁讀不到使用者自己裝的字型（第 ⑯ 條）。**記號列上的每一個字，隨附的字型都要有**（第 ㊱ 條讀 cmap）。

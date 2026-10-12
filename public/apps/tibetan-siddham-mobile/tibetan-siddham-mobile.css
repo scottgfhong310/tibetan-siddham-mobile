@@ -370,7 +370,7 @@ code {
   line-height: 2;
   color: inherit;               /* 裸 span 會被 materialize-dark 的 --mz-text 蓋掉（§5.1 gotcha） */
 }
-/* 沒有記法的格（下加輔音裡的三個固定形）：留著供辨認、按了只出提示 ⇒ 畫淡一點，不裝成可以插入的樣子 */
+/* 沒有記法的格（現在 0 格；三個固定形自 2026-10-12 起插入 y／r／v，是一般的鍵）：按了只出提示 ⇒ 畫淡一點，不裝成可以插入的樣子 */
 .keybar .key-noinput { opacity: .5; }
 .key-ins {
   font-family: var(--mono-font);
