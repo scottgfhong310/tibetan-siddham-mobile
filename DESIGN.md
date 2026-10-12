@@ -207,7 +207,7 @@ bonji-mobile 的同一套版型在 owner 的 iPhone Claude App 上確認過（bm
 | 發佈出去的 24 個檔、宣告的 capabilities | 發佈後列檔案清單（`data/tibetan.tsv` 是 `text/plain`） |
 | 資料庫的規則 | 探針：owner 讀得到、admin 層級讀不到；探針已刪 |
 | 備份腳本對著真的資料庫 | 清單是空的那一次：exit 0、不寫新檔、`backup.log` 有一行 |
-| **Artifacts 頁面真的跑起來**（對照表以 `text/plain` 載入、TTF 字型、紀錄存進資料庫） | **尚未**——這個 session 的瀏覽器沒有登入 claude.ai，看不到那一頁；要 owner 開一次 |
+| **Artifacts 頁面真的跑起來**（對照表以 `text/plain` 載入、紀錄存進資料庫） | ✅ 間接證據〔2026-10-12 下午〕：發佈第 2 版之前取回清單，**資料庫裡已有 owner 自己記的 6 筆**（11:36～16:32）——頁面不跑、對照表載不到的話記不進去。發佈後 6 筆、各筆版本號未變。⚠️ 這個 session 的瀏覽器沒有登入 claude.ai，**畫面本身我沒有看過** |
 | **iPhone 的 Claude App**：鍵盤、記號列的字形、清單關掉重開還在 | **尚未**——要 owner 實測 |
 
 ## 10. 刻意沒做的

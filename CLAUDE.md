@@ -95,5 +95,6 @@ public/apps/tibetan-siddham-mobile/
 
 ## 尚未在真機上驗的（DESIGN §3.1、§9.1）
 
-iPhone／Android 上的鍵盤跟隨、記號列的藏文字形在手機上的樣子、Artifacts 頁面真的跑起來（對照表以 `text/plain` 載入）、清單在 Claude App 裡關掉重開還在。
+iPhone／Android 上的鍵盤跟隨、記號列的藏文字形在手機上的樣子、清單在 Claude App 裡關掉重開還在——這幾項還沒有 owner 的回報。
+（Artifacts 頁面有在跑、清單寫得進資料庫：2026-10-12 發佈第 2 版前，資料庫裡已有 owner 記的 6 筆。）
 這些在 bonji-mobile 上確認過的是**那一支**；這一支換了字型、鍵高與資料，要 owner 另外看一次。
