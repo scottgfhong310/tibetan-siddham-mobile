@@ -580,7 +580,10 @@ check('㉛ 紀錄面板在手機上：加入不收鍵盤／不放大／不用 co
   const t = sheet.indexOf('id="rec-title"'), l = sheet.indexOf('id="rec-list"'), j = sheet.indexOf('id="rec-json"');
   if (!(t > 0 && t < l && l < j)) miss.push('面板內的順序不是 標題 → 清單 → JSON');
   if (!/modal-fixed-footer/.test((sheet.match(/<div id="records-modal"[^>]*>/) || [''])[0])) miss.push('不是 modal-fixed-footer');
-  if (!/if \(!focused && document\.activeElement !== \$recTitle\) state\.baseline = box\.height;/.test(w.js)) miss.push('標題欄有焦點時仍更新鍵盤基準');
+  // 面板裡會叫出鍵盤的欄位：標題欄，以及編輯表單的標題與記法（第 ㊲ 條）
+  if (!/if \(!focused && !typingInSheet\(\)\) state\.baseline = box\.height;/.test(w.js)) miss.push('標題欄有焦點時仍更新鍵盤基準');
+  const tis = fnBody(w.js, 'typingInSheet');
+  if (!['$recTitle', '$editTitle', '$editInput'].every((v) => tis.indexOf('a === ' + v) > 0)) miss.push('typingInSheet 少算了會叫出鍵盤的欄位');
   return miss.length ? 'FAIL: ' + miss.join('、') : true;
 });
 
@@ -626,7 +629,10 @@ check('㉝ 改標題不碰清單；動清單前先看儲存區', (w) => {
   const act = fnBody(w.js, 'recAction');
   if (!/^\s*function recAction\(act, i\) \{\s*(\/\/[^\n]*\n\s*)*if \(syncItems\(\) === 'changed'\) \{[\s\S]*?return;\s*\}/.test(act.replace(/^\n/, ''))) miss.push('取代／刪除／清除之前沒有先看儲存區');
   const callers = [...w.js.matchAll(/\n  function (\w+)\([^)]*\) \{[\s\S]*?\n  \}/g)].filter((m) => /saveItems\(\)/.test(m[0]) && m[1] !== 'saveItems').map((m) => m[1]).sort().join(',');
-  if (callers !== 'addCurrent,recAction') miss.push('會寫清單的函式變了：' + callers);
+  if (callers !== 'addCurrent,recAction,saveEdit') miss.push('會寫清單的函式變了：' + callers);
+  // 編輯存回（第 ㊲ 條）是第三條會寫清單的路：一樣先看儲存區，別處改過就停下來
+  const se = fnBody(w.js, 'saveEdit');
+  if (!/^\s*function saveEdit\(\) \{\s*var ed = state\.edit;\s*if \(!ed\) return;\s*(\/\/[^\n]*\n\s*)*if \(syncItems\(\) === 'changed'\) \{[\s\S]*?return;\s*\}/.test(se.replace(/^\n/, ''))) miss.push('編輯存回之前沒有先看儲存區');
   if (!/addEventListener\('storage'/.test(w.js)) miss.push('沒有聽 storage 事件');
   return miss.length ? 'FAIL: ' + miss.join('、') : true;
 });
@@ -799,6 +805,68 @@ check('㊱ 隨附的字型畫得出記號列上每一個字形', (w) => {
   return miss.length ? 'FAIL: 字型缺 ' + miss.join('、') : true;
 });
 
+// ㊲ 編輯某一筆〔owner 2026-10-13：清單上每一筆多一顆 ✎，在面板裡改那一筆的標題／記法／選項〕。
+//    (a) 改的是那一筆自己：id 與 order 沿用（身分與位置）；沒有更動 ⇒ 回原來那個物件（不寫入、savedAt 不變）；記法清空 ⇒ null（那是「刪除」的事）
+//    (b) 存回時認 id 不認序號（表單開著的期間別處可能刪掉前面幾筆）；只寫那一筆——主畫面的輸入框、標題欄、畫面上的選項一個都不碰
+//    (c) 編輯中唯一的出口是 儲存／取消：點面板外不關、「完成」收起來（按它會被讀成「存好了」）；有還沒存的更動時，取消要再按一次
+//    (d) 表單在面板最上面、儲存／取消在表單第一列（鍵盤開著時下半截與底列被蓋住）；記法欄不自動大寫／校正、字級走 --ctl-font
+//    期望值寫死在這裡，不取自 editRecord 自己的計算。
+check('㊲ 編輯某一筆：只改那一筆、認 id、出口只有儲存／取消', (w) => {
+  const L = w.Lib, miss = [];
+  if (typeof L.editRecord !== 'function' || typeof L.indexOfId !== 'function') return 'FAIL: lib 沒有 editRecord／indexOfId';
+  const kh = { inputMethod: 'KH', transliteration: 'ISO15919', ignoreSpacesAndHyphens: false };
+  const dflt = { inputMethod: 'ISO15919', transliteration: 'IAST', ignoreSpacesAndHyphens: true };
+  const o = { title: '大悲咒', input: 'na mo', options: dflt, savedAt: 'OLD', id: 'r7', order: 42 };
+  const snap = JSON.stringify(o);
+  if (L.editRecord(o, '大悲咒', 'na mo', dflt, 'NEW') !== o) miss.push('沒有更動時沒有回原來那一筆（會白寫一次、savedAt 變成今天）');
+  if (L.editRecord(o, '  大悲咒 ', 'na mo', { inputMethod: 'x' }, 'NEW') !== o) miss.push('只差在正規化會抹掉的地方也被當成更動');
+  const e1 = L.editRecord(o, '心經咒', 'ga te', kh, 'NEW');
+  if (!eq(e1, { title: '心經咒', input: 'ga te', options: kh, savedAt: 'NEW', id: 'r7', order: 42 })) miss.push('改過的那一筆 = ' + JSON.stringify(e1));
+  const e2 = L.editRecord(o, '大悲咒', 'na mo', kh, 'NEW');
+  if (!e2 || e2 === o || e2.options.inputMethod !== 'KH' || e2.id !== 'r7') miss.push('只改選項不算更動');
+  const e3 = L.editRecord(o, '', 'na mo', dflt, 'NEW');
+  if (!e3 || e3 === o || e3.title !== '') miss.push('把標題改成空的不算更動');
+  const e4 = L.editRecord(o, '大悲咒', 'na mo ', dflt, 'NEW');
+  if (!e4 || e4 === o || e4.input !== 'na mo ') miss.push('記法只差一個空格不算更動（空格是記法）');
+  if (L.editRecord(o, 't', '   ', kh, 'NEW') !== null || L.editRecord(o, 't', '', kh, 'NEW') !== null) miss.push('記法清空也存得回去');
+  if (L.editRecord(null, 't', 'a', kh, 'NEW') !== null) miss.push('沒有原來那一筆也編得出東西');
+  if (JSON.stringify(o) !== snap) miss.push('editRecord 改了傳進來的那一筆');
+  const list = [{ id: 'a' }, { id: 'b' }, null, { id: 'c' }];
+  if (!(L.indexOfId(list, 'c') === 3 && L.indexOfId(list, 'a') === 0 && L.indexOfId(list, 'zz') === -1 && L.indexOfId(list, '') === -1 && L.indexOfId(null, 'a') === -1)) miss.push('indexOfId');
+
+  const start = fnBody(w.js, 'startEdit'), save = fnBody(w.js, 'saveEdit'), end = fnBody(w.js, 'endEdit'), cancel = fnBody(w.js, 'cancelEdit');
+  if (!start || !save || !end || !cancel) return 'FAIL: 找不到 startEdit／saveEdit／endEdit／cancelEdit' + (miss.length ? '；' + miss.join('、') : '');
+  const MAIN = /\$input\b|\$recTitle\b|\$inputMethod\b|\$translit\b|\$ignoreSpaces\b|state\.rec\.title|saveTitle|pushTitle|saveDraft|onInput\(/;
+  if (MAIN.test(start)) miss.push('開始編輯時動了主畫面（輸入框／標題欄／選項）');
+  if (MAIN.test(save)) miss.push('存回時動了主畫面（輸入框／標題欄／選項）');
+  const iSync = save.indexOf("syncItems() === 'changed'"), iFind = save.indexOf('Lib.indexOfId(state.rec.items, ed.id)'), iRep = save.indexOf('Lib.replaceRecord(state.rec.items, i, rec)');
+  if (!(iSync > 0 && iSync < iFind && iFind < iRep)) miss.push('存回不是「先看儲存區 → 以 id 找那一筆 → 就地取代」');
+  if (!/if \(i < 0\) \{[^\n]*return; \}/.test(save)) miss.push('那一筆已經不在時仍然存回去（等於把別處刪掉的加回來）');
+  if (!/if \(rec === ed\.orig\) \{[\s\S]*?return;\s*\}\s*state\.rec\.items = /.test(save)) miss.push('沒有更動也寫入');
+  if ((save.match(/pushPut\(rec\)/g) || []).length !== 1 || /pushDel\(/.test(save)) miss.push('存回不是只寫那一筆');
+  if (!/options\.dismissible = false;/.test(start) || !/options\.dismissible = true;/.test(end)) miss.push('編輯中點面板外面會關掉（或離開編輯後關不掉）');
+  if (!/if \(editDraft\(''\) !== ed\.orig && !isArmed\('editCancel', i\)\) \{ arm\('editCancel', i, 'rec\.toast\.confirmDiscard'\); return; \}/.test(cancel)) miss.push('有還沒存的更動時，取消不必再按一次');
+  if (!/recButton\('edit', i, 'edit', 'rec\.edit', false\)/.test(w.js)) miss.push('清單上沒有編輯鈕');
+  if (!/if \(act === 'edit'\) \{ startEdit\(it\); return; \}/.test(w.js)) miss.push('編輯鈕沒有接到 startEdit');
+  if (!/onCloseStart: function \(\) \{[^\n]*endEdit\(\);/.test(w.js)) miss.push('面板關掉時沒有離開編輯');
+
+  if (!/\.records-sheet\.is-editing \.modal-footer > :not\(\.rec-edit-only\) \{ display: none; \}/.test(w.css)) miss.push('編輯中「完成」與輸出鈕仍看得到');
+  if (!/\.records-sheet\.is-editing \.modal-content > :not\(\.rec-edit\) \{ display: none; \}/.test(w.css)) miss.push('編輯中清單沒有收起');
+  if (!/textarea\.rec-edit-input\s*\{[^}]*font-size:\s*var\(--ctl-font\)/.test(w.css)) miss.push('記法欄沒用 --ctl-font');
+
+  const sheet = (w.html.match(/<div id="records-modal"[\s\S]*?\n  <\/div>\n/) || [''])[0];
+  const pe = sheet.indexOf('id="rec-edit"'), ph = sheet.indexOf('class="rec-heading rec-edit-head"'), pt = sheet.indexOf('id="rec-edit-title"'), pl = sheet.indexOf('id="rec-title"');
+  if (!(pe > 0 && pe < ph && ph < pt && pt < pl)) miss.push('表單不在面板最上面');
+  const head = ph > 0 && pt > ph ? sheet.slice(ph, pt) : '';
+  if (!(head.indexOf('data-edit="save"') > 0 && head.indexOf('data-edit="cancel"') > 0)) miss.push('儲存／取消不在表單第一列');
+  const foot = sheet.slice(sheet.indexOf('class="modal-footer"'));
+  if (!(/class="btn-flat rec-edit-only"[^>]*data-edit="cancel"/.test(foot) && /class="btn-flat rec-edit-only rec-edit-ok"[^>]*data-edit="save"/.test(foot))) miss.push('底列沒有編輯用的 取消／儲存');
+  const ta = (sheet.match(/<textarea id="rec-edit-input"[^>]*>/) || [''])[0];
+  const lack = ['autocapitalize="off"', 'autocorrect="off"', 'spellcheck="false"'].filter((a) => ta.indexOf(a) < 0);
+  if (lack.length) miss.push('記法欄少了 ' + lack.join(' '));
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
 /* ---------- 工具 ---------- */
 function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function walk(dir) {
@@ -908,7 +976,8 @@ const MUTANTS = [
   ['㉛', '標題欄字級寫死 16px', (w) => { w.css = w.css.replace(/(input\[type="text"\]\.rec-title\s*\{[^}]*font-size:\s*)var\(--ctl-font\)/, '$116px'); }],
   ['㉛', '刪除改用 confirm()', (w) => { w.js = w.js.replace("if (!isArmed(act, i)) { arm(act, i, 'rec.toast.confirmRemove', { n: n }); return; }", "if (!confirm('delete?')) return;"); }],
   ['㉛', 'JSON 排到標題欄上面', (w) => { w.html = w.html.replace('id="rec-title"', 'id="__t__"').replace('id="rec-json"', 'id="rec-title"').replace('id="__t__"', 'id="rec-json"'); }],
-  ['㉛', '標題欄有焦點時也更新鍵盤基準', (w) => { w.js = w.js.replace(' && document.activeElement !== $recTitle) state.baseline', ') state.baseline'); }],
+  ['㉛', '標題欄有焦點時也更新鍵盤基準', (w) => { w.js = w.js.replace(' && !typingInSheet()) state.baseline', ') state.baseline'); }],
+  ['㉛', '編輯表單的記法欄有焦點時也更新鍵盤基準', (w) => { w.js = w.js.replace(' || a === $editInput;', ';'); }],
   ['㉜', '存完不讀回比對', (w) => { w.js = w.js.replace('ok = localStorage.getItem(REC_KEY) === text;', 'ok = true;'); }],
   ['㉜', '下載檔名不補零', (w) => { w.Lib.exportFilename = (d) => NAME + '-' + d.getFullYear() + (d.getMonth() + 1) + d.getDate() + d.getHours() + d.getMinutes() + d.getSeconds() + '.json'; }],
   ['㉝', '清除標題又去寫清單', (w) => { w.js = w.js.replace("    state.rec.title = '';\n    saveTitle();", "    state.rec.title = '';\n    saveItems();\n    saveTitle();"); }],
@@ -934,7 +1003,29 @@ const MUTANTS = [
   ['㊱', '標點組多一格字型沒有的字', (w) => { catOf(w, 'punct').entries.push({ code: 'zz', char: C(0x11600) }); const f = w.Lib.keysFromAssist; w.Lib.keysFromAssist = (a, id) => f(a, id); }],
   ['㊱', '藏文字型換成悉曇那一支', (w) => { w.fontTibetan = w.fontSiddham; }],
   ['㊱', '悉曇字型換成藏文那一支（𑗁 畫不出來）', (w) => { w.fontSiddham = w.fontTibetan; }],
-  ['㊱', '字型檔壞掉（表目錄被清空）', (w) => { w.fontTibetan = Buffer.from(w.fontTibetan); w.fontTibetan.fill(0, 12, 12 + 16 * w.fontTibetan.readUInt16BE(4)); }]
+  ['㊱', '字型檔壞掉（表目錄被清空）', (w) => { w.fontTibetan = Buffer.from(w.fontTibetan); w.fontTibetan.fill(0, 12, 12 + 16 * w.fontTibetan.readUInt16BE(4)); }],
+  ['㉝', '編輯存回之前不看儲存區', (w) => { w.js = w.js.replace("    // 清單在別的畫面被改過 ⇒ 先換成最新的，這一下不執行（表單與裡面打的字都留著）\n    if (syncItems() === 'changed') {", "    if (false) {"); }],
+  ['㊲', '沒有更動也回一筆新的（白寫一次）', (w) => { const mk = w.Lib.makeRecord; w.Lib.editRecord = (o, t, i, op, s) => (o ? mk(t, i, op, s, o.id, o.order) : null); }],
+  ['㊲', '編輯後換了一個 id（變成另一筆）', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, ...a) => { const r = f(o, ...a); return r && r !== o ? Object.assign({}, r, { id: 'rnew' }) : r; }; }],
+  ['㊲', '編輯後被排到最後（order 換新）', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, ...a) => { const r = f(o, ...a); return r && r !== o ? Object.assign({}, r, { order: 999999 }) : r; }; }],
+  ['㊲', '記法清空也存回去', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, t, i, op, s) => f(o, t, i, op, s) || (o ? Object.assign({}, o, { input: '', savedAt: s }) : null); }],
+  ['㊲', '只改選項被當成沒有更動', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, t, i, op, s) => { const r = f(o, t, i, op, s); return r && o && r.title === o.title && r.input === o.input ? o : r; }; }],
+  ['㊲', 'editRecord 就地改原來那一筆', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, t, i, op, s) => { const r = f(o, t, i, op, s); if (r && r !== o) { Object.assign(o, r); return Object.assign({}, r); } return r; }; }],
+  ['㊲', '存回時認序號不認 id', (w) => { w.js = w.js.replace("    var i = Lib.indexOfId(state.rec.items, ed.id);\n    // 那一筆已經在別處被刪掉", "    var i = ed.index;\n    // 那一筆已經在別處被刪掉"); }],
+  ['㊲', '那一筆在別處被刪了照樣存回去', (w) => { w.js = w.js.replace("    if (i < 0) { recToast('rec.toast.editGone', null, 'orange', 6000); return; }", "    if (i < 0) i = state.rec.items.length;"); }],
+  ['㊲', '存回時順手改了標題欄', (w) => { w.js = w.js.replace("    saveItems();\n    pushPut(rec);\n    endEdit();", "    state.rec.title = rec.title;\n    saveItems();\n    saveTitle();\n    pushPut(rec);\n    endEdit();"); }],
+  ['㊲', '開始編輯時把那一筆載進主輸入框', (w) => { w.js = w.js.replace("    $editInput.value = it.input;\n", "    $editInput.value = it.input;\n    $input.value = it.input;\n"); }],
+  ['㊲', '沒有更動也寫入', (w) => { w.js = w.js.replace("    if (rec === ed.orig) {   // 沒有更動", "    if (false) {   // 沒有更動"); }],
+  ['㊲', '編輯中點面板外面會關掉', (w) => { w.js = w.js.replace("M.Modal.getInstance($recModal).options.dismissible = false;", "M.Modal.getInstance($recModal).options.dismissible = true;"); }],
+  ['㊲', '有還沒存的更動也直接取消', (w) => { w.js = w.js.replace("if (editDraft('') !== ed.orig && !isArmed('editCancel', i)) {", "if (false) {"); }],
+  ['㊲', '面板關掉後仍停在編輯', (w) => { w.js = w.js.replace("$recTitle.blur(); endEdit(); disarm();", "$recTitle.blur(); disarm();"); }],
+  ['㊲', '編輯中「完成」仍看得到', (w) => { w.css = w.css.replace(".records-sheet.is-editing .modal-footer > :not(.rec-edit-only) { display: none; }\n", ""); }],
+  ['㊲', '表單排到 JSON 的位置（面板底部）', (w) => { w.html = w.html.replace('id="rec-edit"', 'id="__e__"').replace('id="rec-json"', 'id="rec-edit"').replace('id="__e__"', 'id="rec-json"'); }],
+  ['㊲', '儲存／取消只剩底列那一對', (w) => { w.html = w.html.replace(/          <span class="rec-edit-acts">[\s\S]*?<\/span>\n/, ''); }],
+  ['㊲', '記法欄開著自動校正', (w) => { w.html = w.html.replace(/(<textarea id="rec-edit-input"[^>]*?)autocorrect="off" /, '$1'); }],
+  ['㊲', '記法欄字級寫死 16px', (w) => { w.css = w.css.replace(/(textarea\.rec-edit-input\s*\{[^}]*font-size:\s*)var\(--ctl-font\)/, '$116px'); }],
+  ['㊲', '清單上沒有編輯鈕', (w) => { w.js = w.js.replace("      li.appendChild(recButton('edit', i, 'edit', 'rec.edit', false));\n", ''); }],
+  ['⑭', '編輯的文案少一語', (w) => { delete w.locales.ja['rec.toast.confirmDiscard']; }]
 ];
 
 async function selftest() {

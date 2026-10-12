@@ -12,8 +12,8 @@
 
 ```bash
 npm install && npm start                 # → http://localhost:3000/apps/tibetan-siddham-mobile/
-npm run verify                           # 36 條契約檢查
-node scripts/verify.js --selftest        # 109 個反向注入，全部必須被抓到
+npm run verify                           # 37 條契約檢查
+node scripts/verify.js --selftest        # 132 個反向注入，全部必須被抓到
 python3 artifact/build.py                # Artifacts 版 → artifact/dist/ ＋ artifact/dist.files.json（都不進版控）
 ```
 
@@ -55,11 +55,13 @@ public/apps/tibetan-siddham-mobile/
 9. **上緣安全區墊在 `.shell` 上，不要墊在 `.topbar`**（第 ⑳ 條）；底部安全區以**焦點**判斷（第 ㉒ 條）。
 10. **不要加 `local()` 字型**：iOS 的網頁讀不到使用者自己裝的字型（第 ⑯ 條）。**記號列上的每一個字，隨附的字型都要有**（第 ㊱ 條讀 cmap）。
 11. **紀錄清單的標題不是鍵**：可以重複、可以留空——不要加查重、覆寫或合併（第 ㉘ 條）。清單只存 input 與選項，輸出現算（第 ㉙ 條）。
-12. ⚠️⚠️ **改標題的路上不可以有任何一行寫清單**（bonji-mobile 2026-10-11 實際弄丟過 owner 的紀錄）：兩格分開存；會寫清單的只有 `addCurrent`／`recAction`，而且都先 `syncItems()`。
+12. ⚠️⚠️ **改標題的路上不可以有任何一行寫清單**（bonji-mobile 2026-10-11 實際弄丟過 owner 的紀錄）：兩格分開存；會寫清單的只有 `addCurrent`／`recAction`／`saveEdit`，而且都先 `syncItems()`。
     **不要加「整份存檔」那種函式**（第 ㉝ 條）。
 13. ⚠️⚠️ **Artifacts 版的清單住在 artifact 的資料庫裡**（`records/<id>` 一筆一份文件、`state/title`）。**不要改成整份清單一份文件**（第 ㉞ 條）。
 14. **不要用 `confirm()`／`alert()`**：Artifacts 的 iframe 裡直接回 false。會毀掉東西的動作一律「再按一次」（第 ㉛ 條）。
 15. **`downloadText()` 的函式本體是 `artifact/build.py` 的補丁錨點**——改它，那邊的 `DOWNLOAD_OLD` 要一起改（沒改會建置失敗，不會安靜地漏掉）。
+16. **編輯某一筆（清單上的 ✎）在面板裡做，不經過主畫面**〔owner 2026-10-13〕：`startEdit`／`saveEdit` 不可以碰輸入框、標題欄、畫面上的選項；
+    存回認 `id` 不認序號；編輯中唯一的出口是 儲存／取消（點面板外不關、「完成」收起來）；沒有更動不寫入、記法清空不給存。第 ㊲ 條（DESIGN §8、bm §10.5）。
 16. **原始碼不要寫 `\uXXXX` 跳脫**：寫檔工具會把它換成實體字元。碼位用 `String.fromCodePoint(0x…)`（`verify.js` 全檔如此）。
 
 ## 複製件登記

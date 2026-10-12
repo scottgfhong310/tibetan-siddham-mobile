@@ -17,7 +17,7 @@ Part of the **nodeapp WebApp family**; shared guidelines live at <https://github
   Consonant keys carry an inherent a (`ka`); to attach a vowel use the subjoined set (`k` + `i` = ཀི).
 - **Punctuation**: when ignoring spaces, two spaces give the separator dot `་` (tsheg); three spaces give one full-width space; `|` = `།`, `||` = `༎`, `~` = `𑗁`, `~~` = `༄`. The full punctuation policy is in tibetan-siddham's DESIGN §5.
 - **Options** (`tune`, top right): input method (ISO 15919 / Kyoto-Harvard), transliteration (ISO 15919 / IAST), ignore spaces & hyphens.
-- **Records · JSON output** (`{}`, top right): save the current input with a **title** as a record, then output the whole list as JSON (copy or download). **Titles may be empty and may repeat** — record one mantra in several parts under the same title, and `part` in the output tells them apart. While typing, the add button under the Tibetan column records a part without closing the keyboard. The list lives in your browser (not a backup); the Claude Artifacts edition keeps it in the artifact's database, so it survives closing and switching devices.
+- **Records · JSON output** (`{}`, top right): save the current input with a **title** as a record, then output the whole list as JSON (copy or download). **Titles may be empty and may repeat** — record one mantra in several parts under the same title, and `part` in the output tells them apart. While typing, the add button under the Tibetan column records a part without closing the keyboard. Each record has an edit button (✎) to change its title, notation and options in place. The list lives in your browser (not a backup); the Claude Artifacts edition keeps it in the artifact's database, so it survives closing and switching devices.
 - Copy buttons per output; example chips; input and options are kept as a draft (in your browser only).
 - Bundled **Noto Serif Tibetan** and **Noto Sans Siddham** (both SIL OFL; the latter only for the `𑗁` sign borrowed in the Tibetan column); three UI languages (`zh-Hant` / `en` / `ja`); light / dark themes.
 - **No backend**: the server only serves static files. There is also a [Claude Artifacts edition](https://claude.ai/artifact/9jxT8XXBY9wF2wyt67qXv7) (private).
@@ -63,7 +63,7 @@ See tibetan-siddham's character chart for the full table.
         "latin": "oṃ āḥ hūm̐",
         "codepoints": "U+0F68 U+0F7C U+0F7E U+0F0B …"   // code points of the Tibetan column
       },
-      "savedAt": "2026-10-12T03:14:54.598Z"    // when this record was saved (or replaced)
+      "savedAt": "2026-10-12T03:14:54.598Z"    // when this record was saved (or replaced / edited)
     },
     { "seq": 2, "part": 2, "title": "Hundred-Syllable Mantra", "…": "…" }
   ]

@@ -36,6 +36,12 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   var $ignoreSpaces = document.getElementById('opt-ignore-spaces');
   var $recModal = document.getElementById('records-modal');
   var $recTitle = document.getElementById('rec-title');
+  // 編輯某一筆的表單（紀錄面板裡；見「編輯某一筆」那一段）
+  var $editTitle = document.getElementById('rec-edit-title');
+  var $editInput = document.getElementById('rec-edit-input');
+  var $editMethod = document.getElementById('rec-edit-input-method');
+  var $editTranslit = document.getElementById('rec-edit-translit');
+  var $editIgnore = document.getElementById('rec-edit-ignore-spaces');
   var out = {
     tibetan: document.getElementById('out-tibetan'),
     latin: document.getElementById('out-latin')
@@ -44,6 +50,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   // ready＝藏文對照表載好了（之前不轉）；tableFailed＝載不到時的原因（字串；畫面上要講）
   var state = { theme: 'dark', baseline: 0, saveTimer: 0, keyset: 'vowel', assist: null, assistFailed: false, ready: false, tableFailed: '',
     rec: { title: '', items: [] }, recRaw: null, recSaveTimer: 0, storageOk: true, storageLost: false, storageWarned: false, armed: null, armTimer: 0,
+    edit: null,   // 正在編輯的那一筆：{ id, orig, scroll }（沒有在編輯時是 null）
     // 同步（只有 Artifacts 版有，見「同步」那一段）：on＝清單已改由資料庫作主；last＝資料庫送來的那一份；
     // put／del＝這個畫面送出、還沒被確認的寫入；local＝連上之前就在這支瀏覽器裡的（等第一份完整清單到了再決定送不送）
     remote: { started: false, on: false, ready: false, down: '', unsynced: false, migrated: false, last: [], put: {}, del: {}, local: {}, titleTimer: 0, titleSent: null } };
@@ -67,11 +74,16 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     root.style.setProperty('--input-max', Math.max(46, Math.round(box.height * 0.3)) + 'px');
 
     // 「鍵盤開著」的基準＝輸入框沒有焦點時量到的高度（那時不可能有鍵盤）
-    // ⚠️ 紀錄面板的標題欄有焦點時鍵盤同樣開著——那時量到的高度不可以拿來當基準
+    // ⚠️ 紀錄面板裡的欄位（標題欄、編輯表單的標題與記法）有焦點時鍵盤同樣開著——那時量到的高度不可以拿來當基準
     var focused = document.activeElement === $input;
-    if (!focused && document.activeElement !== $recTitle) state.baseline = box.height;
+    if (!focused && !typingInSheet()) state.baseline = box.height;
     document.body.classList.toggle('kb-open', focused && Lib.keyboardOpen(state.baseline, box.height));
     autosize();
+  }
+
+  function typingInSheet() {
+    var a = document.activeElement;
+    return a === $recTitle || a === $editTitle || a === $editInput;
   }
 
   /* ---------- 輸入框長高 ---------- */
@@ -381,7 +393,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     state.recSaveTimer = setTimeout(saveTitle, 300);
   }
 
-  // 只有增刪改某一筆的那幾條路會走到這裡，而且它們都先 syncItems() 過
+  // 只有增刪改某一筆的那幾條路（addCurrent／recAction／saveEdit）會走到這裡，而且它們都先 syncItems() 過
   function saveItems() {
     if (remoteOn()) return;   // 同上：這支瀏覽器裡不留第二份（留著的話，別台刪掉的紀錄日後會從這裡被送回去）
     var text = JSON.stringify({ items: state.rec.items });
@@ -463,6 +475,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     }
     var it = items[i];
     if (!it) return;
+    if (act === 'edit') { startEdit(it); return; }
     if (act === 'load') {
       // 輸入框裡有還沒記下、而且與這一筆不同的內容 ⇒ 載回會把它蓋掉，先講一次
       var dirty = !!$input.value.trim() && $input.value !== it.input;
@@ -608,12 +621,132 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       // 記法裡的連續空格有意義（兩個＝tsheg、三個＝全形空格）⇒ 這一行以 white-space:pre 顯示；換行改畫成 ↵，維持單行
       main.appendChild(node('span', 'rec-in mono', r.input.replace(/\n/g, ' ↵ ')));
       li.appendChild(main);
+      li.appendChild(recButton('edit', i, 'edit', 'rec.edit', false));
       li.appendChild(recButton('replace', i, 'system_update_alt', 'rec.replace', false));
       li.appendChild(recButton('remove', i, 'delete', 'rec.remove', true));
       list.appendChild(li);
     });
     renderRecCurrent();
     renderRecNote();
+    renderEditChrome();
+  }
+
+  /* ---------- 編輯某一筆〔owner 2026-10-13〕 ----------
+   * 清單上每一筆多一顆 ✎：面板換成那一筆的表單（標題／記法／三個選項＋即時的轉換結果），存回**同一筆**（id、位置不變）。
+   * ⭐ 不經過主畫面：輸入框、標題欄、畫面上的選項一個都不動——那邊正在打的下一段不會被蓋掉
+   *    （原本的路是「載回 → 改 → 再開面板按取代」，載回那一步就會蓋掉它）。
+   * ⚠️ 編輯中唯一的出口是 儲存／取消：點面板外面不關（dismissible 先關掉）、「完成」收起來——
+   *    否則按它會被讀成「存好了」，而打的字就那樣不見。取消時有還沒存的更動 ⇒「再按一次」（同刪除）。
+   * ⚠️ 認的是「哪一筆」（id）不是第幾筆：表單開著的期間，別處可能刪掉前面幾筆（同步）。
+   * ⚠️ 這是第三條會寫清單的路 ⇒ 與另外兩條一樣先 syncItems()；只寫那一筆自己，標題欄那一格不碰。 */
+  function readEditOptions() {
+    return {
+      inputMethod: $editMethod.value,
+      transliteration: $editTranslit.value,
+      ignoreSpacesAndHyphens: $editIgnore.checked
+    };
+  }
+  // 表單現在的內容算成一筆：沒有更動＝回 orig 本身、記法被清空＝null（lib 的 editRecord）
+  function editDraft(savedAt) {
+    return Lib.editRecord(state.edit.orig, $editTitle.value, $editInput.value, readEditOptions(), savedAt);
+  }
+
+  function autosizeEdit() {
+    $editInput.style.height = 'auto';
+    $editInput.style.height = ($editInput.scrollHeight + 2) + 'px';   // border-box ⇒ 內容高 ＋ 上下框線
+  }
+
+  // 轉換結果跟著表單走（用表單上的選項，不是畫面上的）。轉不出來把原因寫在同一格——不留白
+  function renderEditPreview() {
+    var main = document.getElementById('rec-edit-out'), lat = document.getElementById('rec-edit-latin');
+    var input = $editInput.value;
+    main.classList.remove('is-error');
+    if (!input.trim()) { main.textContent = ''; lat.textContent = I18n.t('rec.currentEmpty'); return; }
+    try {
+      var r = convertWith(input, Lib.normalizeOptions(readEditOptions()));
+      main.textContent = r.tibetan;
+      lat.textContent = r.latin;
+    } catch (e) {
+      main.textContent = I18n.t('toast.convertFail', { m: String((e && e.message) || e) });
+      main.classList.add('is-error');
+      lat.textContent = '';
+    }
+  }
+
+  // 面板現在是清單還是表單、表單的抬頭、取消鈕有沒有上膛——都由 state 推出來（renderRecords 的最後一步）
+  function renderEditChrome() {
+    var ed = state.edit;
+    $recModal.classList.toggle('is-editing', !!ed);
+    if (!ed) return;
+    var i = Lib.indexOfId(state.rec.items, ed.id);
+    document.getElementById('rec-edit-heading').textContent =
+      i >= 0 ? I18n.t('rec.editHeading', { n: i + 1 }) : I18n.t('rec.editGone');
+    var armed = isArmed('editCancel', i);
+    $recModal.querySelectorAll('[data-edit="cancel"]').forEach(function (a) { a.classList.toggle('armed', armed); });
+  }
+
+  function startEdit(it) {
+    disarm();
+    var box = $recModal.querySelector('.modal-content');
+    state.edit = { id: it.id, orig: it, scroll: box.scrollTop };
+    $editTitle.value = it.title;
+    $editInput.value = it.input;
+    $editMethod.value = it.options.inputMethod;
+    $editTranslit.value = it.options.transliteration;
+    $editIgnore.checked = it.options.ignoreSpacesAndHyphens;
+    M.Modal.getInstance($recModal).options.dismissible = false;
+    renderRecords();
+    renderEditPreview();
+    box.scrollTop = 0;
+    autosizeEdit();   // 要在表單顯示出來之後量（display:none 時 scrollHeight 是 0）
+  }
+
+  // 離開表單（存了、取消了、或面板被關掉）。回到清單時捲回剛才那一筆的位置
+  function endEdit() {
+    var ed = state.edit;
+    if (!ed) return;
+    state.edit = null;
+    $editTitle.blur();
+    $editInput.blur();
+    M.Modal.getInstance($recModal).options.dismissible = true;
+    disarm();
+    renderRecords();
+    $recModal.querySelector('.modal-content').scrollTop = ed.scroll;
+  }
+
+  function saveEdit() {
+    var ed = state.edit;
+    if (!ed) return;
+    // 清單在別的畫面被改過 ⇒ 先換成最新的，這一下不執行（表單與裡面打的字都留著）
+    if (syncItems() === 'changed') {
+      disarm();
+      renderRecords();
+      recToast('rec.toast.changedElsewhere', null, 'orange', 5000);
+      return;
+    }
+    var i = Lib.indexOfId(state.rec.items, ed.id);
+    // 那一筆已經在別處被刪掉：存回去等於把它加回來——不做，表單留著（裡面的字還抄得出來）
+    if (i < 0) { recToast('rec.toast.editGone', null, 'orange', 6000); return; }
+    var rec = editDraft(new Date().toISOString());
+    if (!rec) { recToast('rec.toast.editEmpty', null, 'orange'); return; }
+    if (rec === ed.orig) {   // 沒有更動：不寫入（savedAt 不該變成今天）
+      endEdit();
+      recToast('rec.toast.editSame', null, 'grey', 1800);
+      return;
+    }
+    state.rec.items = Lib.replaceRecord(state.rec.items, i, rec);
+    saveItems();
+    pushPut(rec);
+    endEdit();
+    recToast('rec.toast.edited', { n: i + 1 }, 'teal');
+  }
+
+  function cancelEdit() {
+    var ed = state.edit;
+    if (!ed) return;
+    var i = Lib.indexOfId(state.rec.items, ed.id);
+    if (editDraft('') !== ed.orig && !isArmed('editCancel', i)) { arm('editCancel', i, 'rec.toast.confirmDiscard'); return; }
+    endEdit();
   }
 
   /* ---------- 同步：清單住在 artifact 的資料庫裡（只有 Artifacts 版有） ----------
@@ -757,6 +890,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
 
   function openRecords() {
     $input.blur();   // 先收鍵盤（同選項面板）
+    endEdit();
     disarm();
     syncItems();   // 開面板時看到的要是儲存區現在的那一份
     renderRecords();
@@ -861,6 +995,22 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       if (e.key === 'Enter') { e.preventDefault(); $recTitle.blur(); }   // 單行欄位：Enter＝打完了，收鍵盤
     });
     $recTitle.addEventListener('blur', function () { setTimeout(fitShell, 0); });
+
+    // 編輯表單：儲存／取消各有兩顆（表單第一列的圖示——鍵盤開著時底列被蓋住；底列的文字鈕），都帶 data-edit
+    $recModal.addEventListener('click', function (e) {
+      var a = e.target.closest('[data-edit]');
+      if (!a) return;
+      e.preventDefault();
+      if (a.getAttribute('data-edit') === 'save') saveEdit(); else cancelEdit();
+    });
+    $editInput.addEventListener('input', function () { autosizeEdit(); renderEditPreview(); });
+    [$editMethod, $editTranslit, $editIgnore].forEach(function (el) { el.addEventListener('change', renderEditPreview); });
+    $editTitle.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); $editTitle.blur(); }
+    });
+    [$editTitle, $editInput].forEach(function (el) {
+      el.addEventListener('blur', function () { setTimeout(fitShell, 0); });
+    });
   }
 
   /* ---------- 主題 / 語言 / 工具列開關 ---------- */
@@ -923,6 +1073,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     keysetBtn.addEventListener('click', function (e) { e.preventDefault(); toggleKeyset(); });
     document.addEventListener('i18n:changed', function () {
       renderRecords();   // 清單裡的「第 n 段」「（無標題）」與空狀態跟著語言走
+      if (state.edit) renderEditPreview();
       renderKeysetToggle();
       if (!Lib.keysFromAssist(state.assist, state.keyset).length) renderKeybar();   // 失敗說明跟著語言走
       if (state.tableFailed) convert();   // 藏文欄裡那一句「對照表載不到」也是文案
@@ -981,7 +1132,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     });
     // onCloseStart 而不是 onCloseEnd：背景分頁裡動畫不推進，End 不會來（家族 memory animation-complete-callbacks-stall）
     M.Modal.init($recModal, {
-      onCloseStart: function () { $recTitle.blur(); disarm(); saveTitle(); }   // 只收尾標題；清單只在它自己被改時寫
+      onCloseStart: function () { $recTitle.blur(); endEdit(); disarm(); saveTitle(); }   // 只收尾標題；清單只在它自己被改時寫
     });
 
     var saved = 'dark';

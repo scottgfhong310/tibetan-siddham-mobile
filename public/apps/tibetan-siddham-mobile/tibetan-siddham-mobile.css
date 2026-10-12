@@ -477,7 +477,8 @@ code {
 
 /* 原生 select：外觀拉到與 Materialize 欄位一致（形制照 coffee-deposit）。
  * ⚠️ 0,2,1 贏過 materialize-dark 的 select.browser-default（0,1,1）。 */
-.options-sheet select.browser-default {
+.options-sheet select.browser-default,
+.records-sheet select.browser-default {
   display: block;
   width: 100%;
   height: 48px;
@@ -497,12 +498,14 @@ code {
   background-repeat: no-repeat;
   background-position: right center;
 }
-.options-sheet select.browser-default:focus {
+.options-sheet select.browser-default:focus,
+.records-sheet select.browser-default:focus {
   border-bottom-color: var(--accent);
   box-shadow: 0 1px 0 0 var(--accent);
   outline: none;
 }
-.options-sheet select.browser-default option {
+.options-sheet select.browser-default option,
+.records-sheet select.browser-default option {
   background: var(--surface);
   color: var(--text);
 }
@@ -688,7 +691,7 @@ code {
   text-overflow: ellipsis;
 }
 
-/* 列上的動作鈕（取代／刪除）與「全部清除」：44px 觸控目標。上膛（再按一次才執行）時反白 */
+/* 列上的動作鈕（編輯／取代／刪除）與「全部清除」：44px 觸控目標。上膛（再按一次才執行）時反白 */
 .records-sheet .rec-btn {
   flex: none;
   display: inline-flex;
@@ -723,6 +726,73 @@ code {
   user-select: text;
 }
 .rec-json.is-empty { color: var(--muted); font-family: inherit; }
+
+/* ===== 編輯某一筆（面板內的表單）〔owner 2026-10-13〕 =====
+ * #records-modal.is-editing（控制器掛）：表單出現；面板裡其餘的（抬頭、標題欄、目前的輸入、清單、JSON、說明）
+ * 與底列原本的三顆鈕收起，底列換成 取消／儲存。
+ * ⚠️ 編輯中唯一的出口是 儲存／取消：「完成」收起來——留著的話按它會被讀成「存好了」。 */
+.rec-edit,
+.records-sheet .modal-footer .rec-edit-only { display: none; }
+.records-sheet.is-editing .rec-edit { display: block; }
+.records-sheet.is-editing .modal-content > :not(.rec-edit) { display: none; }
+.records-sheet.is-editing .modal-footer > :not(.rec-edit-only) { display: none; }
+.records-sheet.is-editing .modal-footer .rec-edit-only { display: inline-block; }
+.records-sheet .modal-footer .rec-edit-ok { color: var(--accent); }
+.records-sheet .modal-footer .btn-flat.armed { color: var(--bg); background: var(--danger); }
+
+.rec-edit-head { margin-top: 0; }
+.rec-edit-head h3 { color: var(--text); font-size: 1.05rem; }
+.rec-edit-acts { display: flex; gap: 4px; }
+.records-sheet .rec-btn.rec-edit-ok { color: var(--accent); }
+.rec-edit .opt-field { margin: 12px 0 0; }
+.rec-edit .opt-switch { margin: 14px 0 6px; }
+
+/* 記法欄：形制照主輸入框（.tsm-input）。⚠️ 字級走 --ctl-font（第 ⑩ 條）；不用 .materialize-textarea（第 ⑫ 條），高度由控制器的 autosizeEdit 給。
+ * 0,2,1 贏過 Materialize 的 textarea（0,0,1）與 materialize-dark。 */
+.records-sheet textarea.rec-edit-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 46px;
+  min-height: 46px;
+  max-height: 34vh;
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono-font);
+  font-size: var(--ctl-font);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;        /* 連續空格是記法（兩個＝tsheg、三個＝全形空格），不可以被摺掉 */
+}
+.records-sheet textarea.rec-edit-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  outline: none;
+}
+/* 轉換結果：跟著表單現在的內容與選項走（整段都顯示，不截） */
+.rec-edit-out {
+  min-height: 1.7em;
+  color: var(--text);
+  font-family: var(--tibetan-font);
+  font-size: 1.4rem;
+  line-height: 2.1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-bottom: .4em;         /* 最後一行的內容區溢出（見 .tibetan-text 的說明） */
+}
+.rec-edit-out.is-error { font-family: inherit; font-size: .85rem; line-height: 1.6; color: var(--danger); padding-bottom: 0; }
+.rec-edit-latin {
+  color: var(--muted);
+  font-size: .95rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* ===== toast 一律在上方 =====
  * Materialize 在窄螢幕把 toast 放底部；iOS 上那是 layout viewport 的底部，**正好在鍵盤後面**，

@@ -151,6 +151,58 @@
   <div id="records-modal" class="modal bottom-sheet modal-fixed-footer records-sheet">
     <div class="modal-content">
       <h2 class="sheet-title" data-i18n="rec.title">紀錄・JSON 輸出</h2>
+      <!-- 編輯某一筆〔owner 2026-10-13〕：按清單上那一筆的 ✎，面板換成這張表單（其餘先收起——#records-modal.is-editing，由控制器掛）。
+           改的是那一筆自己的標題／記法／選項，**不經過主畫面的輸入框**（那邊正在打的東西不受影響）。
+           ⚠️ 表單在面板最上面、儲存／取消在表單第一列：鍵盤開著時 bottom-sheet 的下半截（含底列）被蓋住，上緣不會（同標題欄）。
+           ⚠️ 記法欄與主輸入框同一組屬性（不自動大寫／校正）；select 一律原生。 -->
+      <div id="rec-edit" class="rec-edit">
+        <div class="rec-heading rec-edit-head">
+          <h3 id="rec-edit-heading"></h3>
+          <span class="rec-edit-acts">
+            <a href="#!" class="rec-btn rec-danger" data-edit="cancel" data-i18n-title="rec.editCancel" title="取消">
+              <i class="material-icons">close</i>
+            </a>
+            <a href="#!" class="rec-btn rec-edit-ok" data-edit="save" data-i18n-title="rec.editSave" title="儲存">
+              <i class="material-icons">check</i>
+            </a>
+          </span>
+        </div>
+        <div class="opt-field">
+          <label class="opt-label" for="rec-edit-title" data-i18n="rec.editTitleLabel">標題（可留空、可重複）</label>
+          <input type="text" id="rec-edit-title" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false" />
+        </div>
+        <div class="opt-field">
+          <label class="opt-label" for="rec-edit-input" data-i18n="rec.editInput">記法</label>
+          <textarea id="rec-edit-input" class="rec-edit-input mono" rows="2"
+            autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
+        </div>
+        <div class="opt-field">
+          <span class="opt-label" data-i18n="rec.editPreview">轉換結果</span>
+          <div id="rec-edit-out" class="rec-edit-out" aria-live="polite"></div>
+          <div id="rec-edit-latin" class="rec-edit-latin"></div>
+        </div>
+        <label class="opt-field">
+          <span class="opt-label" data-i18n="opt.inputMethod">輸入法</span>
+          <select id="rec-edit-input-method" class="browser-default">
+            <option value="ISO15919">ISO 15919</option>
+            <option value="KH">Kyoto-Harvard</option>
+          </select>
+        </label>
+        <label class="opt-field">
+          <span class="opt-label" data-i18n="opt.translit">拉丁轉寫</span>
+          <select id="rec-edit-translit" class="browser-default">
+            <option value="ISO15919">ISO 15919</option>
+            <option value="IAST">IAST</option>
+          </select>
+        </label>
+        <div class="switch opt-switch">
+          <label>
+            <input type="checkbox" id="rec-edit-ignore-spaces" />
+            <span class="lever"></span>
+            <span data-i18n="opt.ignoreSpaces">忽略空格與連字號</span>
+          </label>
+        </div>
+      </div>
       <!-- 外層是 div 不是 label：清除鈕放在 label 裡的話，按它會連帶觸發 label 的預設動作（聚焦標題欄＝鍵盤彈出來） -->
       <div class="opt-field">
         <label class="opt-label" for="rec-title" data-i18n="rec.titleLabel">標題（可留空、可重複）</label>
@@ -190,6 +242,9 @@
       <a href="#!" id="rec-copy" class="btn-flat"><i class="material-icons left">content_copy</i><span data-i18n="rec.copyJson">複製 JSON</span></a>
       <a href="#!" id="rec-download" class="btn-flat"><i class="material-icons left">file_download</i><span data-i18n="rec.download">下載</span></a>
       <a href="#!" class="modal-close btn-flat" data-i18n="opt.done">完成</a>
+      <!-- 編輯中：底列換成這兩顆（上面三顆收起）。與表單第一列的兩顆圖示是同一對動作 -->
+      <a href="#!" class="btn-flat rec-edit-only" data-edit="cancel" data-i18n="rec.editCancel">取消</a>
+      <a href="#!" class="btn-flat rec-edit-only rec-edit-ok" data-edit="save"><i class="material-icons left">check</i><span data-i18n="rec.editSave">儲存</span></a>
     </div>
   </div>
 
