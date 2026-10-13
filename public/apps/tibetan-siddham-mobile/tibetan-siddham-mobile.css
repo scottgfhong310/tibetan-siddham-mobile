@@ -814,8 +814,9 @@ code {
 
 /* ===== 放大閱讀某一筆〔owner 2026-10-13〕 =====
  * #records-modal.is-viewing（控制器掛）：這一頁出現，面板裡其餘的與底列原本的鈕收起，底列只剩「返回清單」。
- * ⭐ 藏文以 **font-size: 2em** 顯示〔owner 指定的大小〕——.rec-view 自己把基準定成 1rem，2em 才是一個算得出來的值（＝主畫面輸出欄的 2rem）。
- *    行高與留底照主畫面那一欄（.tibetan-text）：那兩個數字是量過的，字級相同就沿用。整段都顯示、不截斷；長的時候捲的是面板。 */
+ * ⭐ 藏文以 **font-size: 3em** 顯示〔owner 指定的大小：先是 2em，同日「請調整為 3em，字再大一些」〕——.rec-view 自己把基準定成 1rem，
+ *    3em 才是一個算得出來的值（＝主畫面輸出欄 2rem 的一倍半）。行高（無單位）與留底（em）照主畫面那一欄（.tibetan-text）量過的數字，
+ *    兩者都是相對值，跟著字級一起放大。整段都顯示、不截斷；長的時候捲的是面板。 */
 .rec-view,
 .records-sheet .modal-footer .rec-view-only { display: none; }
 .records-sheet.is-viewing .rec-view { display: block; font-size: 1rem; }
@@ -831,7 +832,7 @@ code {
   margin-top: 10px;
   color: var(--text);
   font-family: var(--tibetan-font);
-  font-size: 2em;
+  font-size: 3em;
   line-height: 2.1;
   padding-bottom: .5em;
   white-space: pre-wrap;

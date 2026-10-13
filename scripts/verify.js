@@ -1058,11 +1058,11 @@ check('㊴ 類型欄：自由文字＋快選鈕、加入時帶入、自己一格
 
 // ㊵ 放大閱讀某一筆〔owner 2026-10-13：「在 `編輯` 與 `刪除` 間的 icon，功能調整為 preview，可以用 `font-size: 2em` 來閱讀這一筆的藏文與梵文的內容」〕。
 //    (a) 清單每一列的鈕依序是 編輯 → 放大閱讀 → 刪除；那個位置原本的「取代」整個拿掉了（鈕、動作、文案）
-//    (b) 文字以 font-size: 2em 顯示〔owner 指定〕，基準是 1rem；整段都顯示（不截斷）、用的是那支文字自己的字型
+//    (b) 文字以 font-size: 3em 顯示〔owner 指定：先 2em，同日改 3em「字再大一些」〕，基準是 1rem；整段都顯示（不截斷）、用的是那支文字自己的字型
 //    (c) **唯讀**：開／關／畫這一頁的三支函式沒有任何一行會寫東西，也不碰主畫面與面板上那三格；這一頁裡沒有會改東西的控制項
 //    (d) 用那一筆自己的選項現算；認 id 不認序號；那一筆不在了就回清單
 //    (e) 這一頁開著時清單收起、底列只剩返回；面板關掉時離開這一頁
-check('㊵ 放大閱讀：2em、唯讀；「取代」已拿掉', (w) => {
+check('㊵ 放大閱讀：3em、唯讀；「取代」已拿掉', (w) => {
   const miss = [];
   const row = (w.js.match(/li\.appendChild\(recButton\('edit'[\s\S]*?list\.appendChild\(li\);/) || [''])[0];
   const acts = [...row.matchAll(/recButton\('(\w+)', i, '(\w+)'/g)].map((m) => m[1] + ':' + m[2]).join(' ');
@@ -1082,10 +1082,10 @@ check('㊵ 放大閱讀：2em、唯讀；「取代」已拿掉', (w) => {
   if (!/onCloseStart: function \(\) \{[^\n]*endView\(\);/.test(w.js)) miss.push('面板關掉時沒有離開這一頁');
 
   const vt = (w.css.match(/\n\.rec-view-text \{[^}]*\}/) || [''])[0];
-  if (!/font-size:\s*2em;/.test(vt)) miss.push('文字不是 font-size: 2em');
+  if (!/font-size:\s*3em;/.test(vt)) miss.push('文字不是 font-size: 3em');
   if (!/font-family:\s*var\(--(siddham|tibetan)-font\);/.test(vt)) miss.push('文字用的不是那支文字的字型');
   if (/line-clamp|text-overflow|overflow:\s*hidden|max-height/.test(vt)) miss.push('文字被截斷');
-  if (!/\.records-sheet\.is-viewing \.rec-view \{ display: block; font-size: 1rem; \}/.test(w.css)) miss.push('2em 的基準不是 1rem');
+  if (!/\.records-sheet\.is-viewing \.rec-view \{ display: block; font-size: 1rem; \}/.test(w.css)) miss.push('3em 的基準不是 1rem');
   if (!/\.records-sheet\.is-viewing \.modal-content > :not\(\.rec-view\) \{ display: none; \}/.test(w.css)) miss.push('這一頁開著時清單沒有收起');
   if (!/\.records-sheet\.is-viewing \.modal-footer > :not\(\.rec-view-only\) \{ display: none; \}/.test(w.css)) miss.push('這一頁開著時底列原本的鈕沒有收起');
 
@@ -1332,8 +1332,8 @@ const MUTANTS = [
   ['⑭', '類型的文案少一語', (w) => { delete w.locales.ja['rec.typeLabel']; }],
   ['㊵', '那個位置又變回「取代」', (w) => { w.js = w.js.replace("recButton('view', i, 'visibility', 'rec.view', false)", "recButton('replace', i, 'system_update_alt', 'rec.replace', false)"); }],
   ['㊵', '放大閱讀排到刪除後面', (w) => { const a = "      li.appendChild(recButton('view', i, 'visibility', 'rec.view', false));\n", b = "      li.appendChild(recButton('remove', i, 'delete', 'rec.remove', true));\n"; w.js = w.js.replace(a + b, b + a); }],
-  ['㊵', '文字不是 2em', (w) => { w.css = w.css.replace(/(\n\.rec-view-text \{[^}]*font-size:\s*)2em;/, '$11.3rem;'); }],
-  ['㊵', '2em 沒有基準（跟著外面的字級走）', (w) => { w.css = w.css.replace('.records-sheet.is-viewing .rec-view { display: block; font-size: 1rem; }', '.records-sheet.is-viewing .rec-view { display: block; }'); }],
+  ['㊵', '文字不是 3em（退回 2em）', (w) => { w.css = w.css.replace(/(\n\.rec-view-text \{[^}]*font-size:\s*)3em;/, '$12em;'); }],
+  ['㊵', '3em 沒有基準（跟著外面的字級走）', (w) => { w.css = w.css.replace('.records-sheet.is-viewing .rec-view { display: block; font-size: 1rem; }', '.records-sheet.is-viewing .rec-view { display: block; }'); }],
   ['㊵', '文字只顯示兩行', (w) => { w.css = w.css.replace(/(\n\.rec-view-text \{)/, '$1\n  display: -webkit-box;\n  -webkit-line-clamp: 2;\n  overflow: hidden;'); }],
   ['㊵', '文字用系統字型', (w) => { w.css = w.css.replace(/(\n\.rec-view-text \{[^}]*font-family:\s*)var\(--(?:siddham|tibetan)-font\);/, '$1inherit;'); }],
   ['㊵', '用畫面上的選項轉（不是那一筆自己的）', (w) => { w.js = w.js.replace('var r = convertWith(it.input, it.options);', 'var r = convertWith(it.input, readOptions());'); }],
