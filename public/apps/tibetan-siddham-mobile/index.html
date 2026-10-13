@@ -187,7 +187,7 @@
           <div id="rec-edit-latin" class="rec-edit-latin"></div>
         </div>
         <div class="opt-field">
-          <label class="opt-label" for="rec-edit-source" data-i18n="rec.editSource">來源</label>
+          <label class="opt-label" for="rec-edit-source" data-i18n="rec.editSource">出處參考</label>
           <textarea id="rec-edit-source" class="rec-source-input" rows="2"
             autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
         </div>
@@ -237,16 +237,16 @@
         </div>
         <div class="rec-chips" data-for="rec-type"></div>
       </div>
-      <!-- 來源〔owner 2026-10-13〕：這一筆資料出自哪裡（經號、頁碼、網址…），多行。行為照標題欄：加入一筆時帶入現在的值，
+      <!-- 來源（欄位名 source；**畫面上的標籤是「出處參考」**——owner 2026-10-13 改的，程式與文件裡仍叫它來源欄）：這一筆資料出自哪裡（經號、頁碼、網址…），多行。行為照標題欄：加入一筆時帶入現在的值，
            所以同一部咒語分好幾段記只要填一次；每一筆之後仍可在編輯表單裡各自改。
            ⚠️ 清除鈕同樣不可以包在 label 裡；textarea 是裸的（高度由控制器的 grow() 給）、字級走 --ctl-font。 -->
       <div class="opt-field">
-        <label class="opt-label" for="rec-source" data-i18n="rec.sourceLabel">來源（可留空；加入時會帶進那一筆）</label>
+        <label class="opt-label" for="rec-source" data-i18n="rec.sourceLabel">出處參考（可留空；加入時會帶進那一筆）</label>
         <div class="rec-title-row rec-source-row">
           <textarea id="rec-source" class="rec-source-input" rows="1"
             autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"
             data-i18n-placeholder="rec.sourcePlaceholder" placeholder="例如：大正藏 T20 No.1060"></textarea>
-          <a href="#!" id="rec-source-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearSource" title="清除來源">
+          <a href="#!" id="rec-source-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearSource" title="清除出處參考">
             <i class="material-icons">clear</i>
           </a>
         </div>
