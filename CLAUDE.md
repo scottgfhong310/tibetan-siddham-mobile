@@ -12,8 +12,8 @@
 
 ```bash
 npm install && npm start                 # → http://localhost:3000/apps/tibetan-siddham-mobile/
-npm run verify                           # 39 條契約檢查
-node scripts/verify.js --selftest        # 203 個反向注入，全部必須被抓到
+npm run verify                           # 40 條契約檢查
+node scripts/verify.js --selftest        # 218 個反向注入，全部必須被抓到
 python3 artifact/build.py                # Artifacts 版 → artifact/dist/ ＋ artifact/dist.files.json（都不進版控）
 ```
 
@@ -62,11 +62,13 @@ public/apps/tibetan-siddham-mobile/
 15. **`downloadText()` 的函式本體是 `artifact/build.py` 的補丁錨點**——改它，那邊的 `DOWNLOAD_OLD` 要一起改（沒改會建置失敗，不會安靜地漏掉）。
 16. **編輯某一筆（清單上的 ✎）在面板裡做，不經過主畫面**〔owner 2026-10-13〕：`startEdit`／`saveEdit` 不可以碰輸入框、標題欄、畫面上的選項；
     存回認 `id` 不認序號；編輯中唯一的出口是 儲存／取消（點面板外不關、「完成」收起來）；沒有更動不寫入、記法清空不給存。第 ㊲ 條（DESIGN §8、bm §10.5）。
-17. **每一筆有 `type`（類型——**字串陣列，可以有好幾個，像 tags**；第一版是單一字串，讀進來當成一個，**不要寫遷移**）與 `source`（來源，多行；⚠️ **畫面上的標籤是「出處參考」**，欄位名、key、id 仍是 source——不要為了對齊去改名）兩欄，都可以是空的**〔owner 2026-10-13〕：面板上標題欄底下那兩格的值在加入／取代時帶入；編輯表單裡可各自改。
+17. **每一筆有 `type`（類型——**字串陣列，可以有好幾個，像 tags**；第一版是單一字串，讀進來當成一個，**不要寫遷移**）與 `source`（來源，多行；⚠️ **畫面上的標籤是「出處參考」**，欄位名、key、id 仍是 source——不要為了對齊去改名）兩欄，都可以是空的**〔owner 2026-10-13〕：面板上標題欄底下那兩格的值在加入時帶入；編輯表單裡可各自改。
     類型是**自由文字＋複選的快選鈕**（快選鈕只有清單裡用過的類型；**沒有預設的詞——owner 拿掉了，不要加回來**）——不要改成固定選單；欄位裡以「、」相連，把陣列塞進欄位要過 `typesText()`；編輯表單裡那一排快選鈕只動表單那一格。
     ⚠️ 新增一個紀錄欄位要動**四個地方**，漏一個都不會報錯：lib 的 `makeRecord`（白名單）、`buildExport`、`artifact/src/remote-db.js` 的寫入與讀回各一處、
     `scripts/backup-artifact.sh` 的 `body()`。兩格的值各自一格存，規矩同第 12 條。舊紀錄沒有這兩欄＝空字串。第 ㊳㊴ 條（DESIGN §8、bm §10.6、§10.7）。
-18. **原始碼不要寫 `\uXXXX` 跳脫**：寫檔工具會把它換成實體字元。碼位用 `String.fromCodePoint(0x…)`（`verify.js` 全檔如此）。
+18. **清單每一列的三顆鈕是 編輯 → 放大閱讀 → 刪除**〔owner 2026-10-13〕：中間那一顆原本是「取代」，owner 把它換成放大閱讀（那一筆的藏文以 `font-size: 2em` 顯示），**取代整個拿掉了，不要加回來**。
+    放大閱讀那一頁是**唯讀**的——不可以在裡面放任何會寫東西的鈕。第 ㊵ 條（DESIGN §8、bm §10.8）。
+19. **原始碼不要寫 `\uXXXX` 跳脫**：寫檔工具會把它換成實體字元。碼位用 `String.fromCodePoint(0x…)`（`verify.js` 全檔如此）。
 
 ## 複製件登記
 

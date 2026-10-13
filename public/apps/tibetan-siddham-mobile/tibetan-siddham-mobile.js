@@ -57,6 +57,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   var state = { theme: 'dark', baseline: 0, saveTimer: 0, keyset: 'vowel', assist: null, assistFailed: false, ready: false, tableFailed: '',
     rec: { title: '', type: '', source: '', items: [] }, recRaw: null, recSaveTimer: 0, recSourceTimer: 0, recTypeTimer: 0, storageOk: true, storageLost: false, storageWarned: false, armed: null, armTimer: 0,
     edit: null,   // 正在編輯的那一筆：{ id, orig, scroll }（沒有在編輯時是 null）
+    view: null,   // 正在放大閱讀的那一筆：{ id, scroll }
     // 同步（只有 Artifacts 版有，見「同步」那一段）：on＝清單已改由資料庫作主；last＝資料庫送來的那一份；
     // put／del＝這個畫面送出、還沒被確認的寫入；local＝連上之前就在這支瀏覽器裡的（等第一份完整清單到了再決定送不送）
     remote: { started: false, on: false, ready: false, down: '', unsynced: false, migrated: false, last: [], put: {}, del: {}, local: {}, titleTimer: 0, titleSent: null, sourceTimer: 0, sourceSent: null, typeTimer: 0, typeSent: null } };
@@ -334,7 +335,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
    * ⚠️ 清單存在 localStorage——**那是這支瀏覽器的方便，不是備份**：可能不在、會丟例外、或（iOS 上的 Artifacts 版）
    *    寫得進讀不回。每次存完讀回來比對，對不上就在面板上講出來（不講的話看起來像 app 把清單弄丟了）。
    * ⚠️ 沒有 window.confirm：Artifacts 的 iframe 裡它不跳對話框、直接回 false ⇒ 會毀掉東西的動作
-   *    （取代／刪除／全部清除／載回時蓋掉還沒記下的輸入）一律「再按一次」。 */
+   *    （刪除／全部清除／載回時蓋掉還沒記下的輸入／放棄編輯）一律「再按一次」。 */
   // 每一筆各自一個轉換器（不是畫面上那一個——它帶的是「現在」的選項）。對照表是模組層共用的，載過一次就都能轉。
   // 只取藏文與拉丁；碼位是藏文那一欄的（同 tibetan-siddham 畫面上的「Unicode 碼位」）。
   function convertWith(input, options) {
@@ -374,7 +375,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   }
 
   /* 動清單之前先看儲存區：別的畫面可能已經改過它。'changed' ⇒ 記憶裡的那一份作廢，改用儲存區的
-   * （加入＝接在它後面；取代／刪除／清除的序號可能已經不對 ⇒ 呼叫端停下來、請使用者再確認一次）。
+   * （加入＝接在它後面；刪除／清除／編輯的序號可能已經不對 ⇒ 呼叫端停下來、請使用者再確認一次）。
    * 'lost'（我們寫過、現在讀不到）⇒ 儲存區不可靠，留著記憶裡的。 */
   function syncItems() {
     if (remoteOn()) return 'same';   // 清單由資料庫作主：別處的更動由它推過來，不看這支瀏覽器的儲存區
@@ -439,10 +440,9 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       M.toast({ html: _esc(I18n.t('rec.storageFail')), classes: 'orange', displayLength: 6000 });
     }
   }
-  // keep：取代某一筆時傳它進來——身分（id）與位置（order）沿用，分段的順序就是資料
-  function currentRecord(keep) {
+  function currentRecord() {
     return Lib.makeRecord($recTitle.value, $input.value, readOptions(), new Date().toISOString(),
-      keep ? keep.id : newId(), keep ? keep.order : 0, $recSource.value, $recType.value);
+      newId(), 0, $recSource.value, $recType.value);
   }
   function titleOr(t) { return t || I18n.t('rec.untitled'); }
   function recToast(key, params, cls, ms) {
@@ -513,6 +513,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     var it = items[i];
     if (!it) return;
     if (act === 'edit') { startEdit(it); return; }
+    if (act === 'view') { startView(it); return; }
     if (act === 'load') {
       // 輸入框裡有還沒記下、而且與這一筆不同的內容 ⇒ 載回會把它蓋掉，先講一次
       var dirty = !!$input.value.trim() && $input.value !== it.input;
@@ -520,7 +521,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       disarm();
       $recTitle.value = it.title;
       state.rec.title = it.title;
-      $recSource.value = it.source;   // 來源跟著那一筆回來（之後按取代，來源才不會被面板上別的值換掉）
+      $recSource.value = it.source;   // 來源跟著那一筆回來（接著加入的下一段，帶的才是這一筆的來源，不是面板上剛好留著的別的值）
       state.rec.source = it.source;
       $recType.value = Lib.typesText(it.type);   // 類型同上（好幾個時以「、」相連）
       state.rec.type = $recType.value;
@@ -537,27 +538,6 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       onInput();
       M.Modal.getInstance($recModal).close();
       recToast('rec.toast.loaded', { n: n, t: titleOr(it.title) }, 'teal');
-      return;
-    }
-    if (act === 'replace') {
-      var rec = currentRecord(it);
-      if (!rec) { recToast('rec.toast.nothing', null, 'orange'); return; }
-      if (!isArmed(act, i)) { arm(act, i, 'rec.toast.confirmReplace', { n: n }); return; }
-      disarm();
-      state.rec.items = Lib.replaceRecord(items, i, rec);
-      state.rec.title = rec.title;
-      state.rec.source = rec.source;
-      state.rec.type = Lib.typesText(rec.type);
-      saveItems();
-      saveTitle();
-      saveSource();
-      saveType();
-      pushPut(rec);
-      pushTitle();
-      pushSource();
-      pushType();
-      renderRecords();
-      recToast('rec.toast.replaced', { n: n }, 'teal');
       return;
     }
     if (act === 'remove') {
@@ -718,7 +698,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       if (r.source) main.appendChild(node('span', 'rec-src', I18n.t('rec.sourceLine', { s: r.source.replace(/\s*\n\s*/g, '／') })));
       li.appendChild(main);
       li.appendChild(recButton('edit', i, 'edit', 'rec.edit', false));
-      li.appendChild(recButton('replace', i, 'system_update_alt', 'rec.replace', false));
+      li.appendChild(recButton('view', i, 'visibility', 'rec.view', false));
       li.appendChild(recButton('remove', i, 'delete', 'rec.remove', true));
       list.appendChild(li);
     });
@@ -726,12 +706,59 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     renderRecNote();
     renderEditChrome();
     renderTypeChips();   // 清單變了，用過的類型也跟著變
+    renderView();
+  }
+
+  /* ---------- 放大閱讀某一筆〔owner 2026-10-13〕 ----------
+   * 清單上每一筆、在編輯與刪除之間的那一顆：面板換成這一頁，那一筆的藏文以 **font-size: 2em** 顯示（清單上只有 1.3rem，而且兩行就截斷）。
+   * ⭐ 那個位置原本是「以目前的輸入取代這一筆」——owner 把它的功能換成這一個；取代整個拿掉了（要改一筆用 ✎）。
+   * ⚠️ **唯讀**：這一頁沒有任何一行會寫東西（清單、三格的值、輸入框都不碰）；轉換用那一筆自己的選項，現算。
+   * ⚠️ 認的是「哪一筆」（id）：開著的期間別處刪了前面幾筆，看到的還是原來那一筆；那一筆自己被刪了就回清單。 */
+  function startView(it) {
+    disarm();
+    var box = $recModal.querySelector('.modal-content');
+    state.view = { id: it.id, scroll: box.scrollTop };
+    renderRecords();
+    box.scrollTop = 0;
+  }
+  // 離開（按返回、或面板被關掉）：回到清單時捲回剛才那一筆的位置
+  function endView() {
+    var v = state.view;
+    if (!v) return;
+    state.view = null;
+    renderRecords();
+    $recModal.querySelector('.modal-content').scrollTop = v.scroll;
+  }
+  // 這一頁的內容由 state 推出來（renderRecords 的最後一步——清單被別處換過、語言切換時跟著重畫）
+  function renderView() {
+    var v = state.view;
+    var i = v ? Lib.indexOfId(state.rec.items, v.id) : -1;
+    if (v && i < 0) { state.view = null; v = null; }   // 那一筆已經不在了
+    $recModal.classList.toggle('is-viewing', !!v);
+    if (!v) return;
+    var it = state.rec.items[i];
+    document.getElementById('rec-view-heading').textContent = I18n.t('rec.viewHeading', { n: i + 1, t: titleOr(it.title) });
+    var types = document.getElementById('rec-view-types');
+    types.textContent = '';
+    it.type.forEach(function (t) { types.appendChild(node('span', 'rec-type', t)); });
+    var text = document.getElementById('rec-view-text'), lat = document.getElementById('rec-view-latin');
+    text.classList.remove('is-error');
+    try {
+      var r = convertWith(it.input, it.options);
+      text.textContent = r.tibetan;
+      lat.textContent = r.latin;
+    } catch (e) {
+      text.textContent = I18n.t('toast.convertFail', { m: String((e && e.message) || e) });
+      text.classList.add('is-error');
+      lat.textContent = '';
+    }
+    document.getElementById('rec-view-source').textContent = it.source ? I18n.t('rec.sourceLine', { s: it.source }) : '';
   }
 
   /* ---------- 編輯某一筆〔owner 2026-10-13〕 ----------
    * 清單上每一筆多一顆 ✎：面板換成那一筆的表單（標題／記法／三個選項＋即時的轉換結果），存回**同一筆**（id、位置不變）。
    * ⭐ 不經過主畫面：輸入框、標題欄、畫面上的選項一個都不動——那邊正在打的下一段不會被蓋掉
-   *    （原本的路是「載回 → 改 → 再開面板按取代」，載回那一步就會蓋掉它）。
+   *    （那時的另一條路是「載回 → 改 → 再開面板按取代」，載回那一步就會蓋掉它；「取代」後來整個拿掉了，見「放大閱讀」那一段）。
    * ⚠️ 編輯中唯一的出口是 儲存／取消：點面板外面不關（dismissible 先關掉）、「完成」收起來——
    *    否則按它會被讀成「存好了」，而打的字就那樣不見。取消時有還沒存的更動 ⇒「再按一次」（同刪除）。
    * ⚠️ 認的是「哪一筆」（id）不是第幾筆：表單開著的期間，別處可能刪掉前面幾筆（同步）。
@@ -859,7 +886,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
    * 〔bonji-mobile 2026-10-11，owner 實測〕iPhone 的 Claude App 把 artifact 關掉重開，localStorage 裡的清單就讀不回來——
    * 清單不能只放在瀏覽器裡。Artifacts 版多載一支 `remote-db.js`（artifact/src/，由 build.py 帶進去），
    * 它把 `window.TibetanSiddhamMobileRemote` 掛上來；GitHub／3001 那一份沒有它，下面整段都不會動，清單照舊存 localStorage。
-   * ⭐ 資料庫裡**一筆一份文件**（文件名＝那一筆的 id）：加入／取代／刪除各自只碰自己那一份，
+   * ⭐ 資料庫裡**一筆一份文件**（文件名＝那一筆的 id）：加入／編輯／刪除各自只碰自己那一份，
    *    沒有「整份清單寫回去」這個動作 ⇒ 兩台裝置同時記也不會互相蓋掉（家族 CHANGELOG v2.181 那個坑在這裡結構上不存在）。
    * 畫面上的清單＝資料庫送來的（last）⊕ 這個畫面送出、還沒被確認的寫入（put／del），見 lib 的 mergeRemote。 */
   function remoteOn() { return state.remote.on; }
@@ -1041,6 +1068,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   function openRecords() {
     $input.blur();   // 先收鍵盤（同選項面板）
     endEdit();
+    endView();
     disarm();
     syncItems();   // 開面板時看到的要是儲存區現在的那一份
     renderRecords();
@@ -1192,6 +1220,12 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       e.preventDefault();
       if (a.getAttribute('data-edit') === 'save') saveEdit(); else cancelEdit();
     });
+    // 放大閱讀那一頁：返回（抬頭旁的 × 與底列的文字鈕，都帶 data-view）
+    $recModal.addEventListener('click', function (e) {
+      if (!e.target.closest('[data-view]')) return;
+      e.preventDefault();
+      endView();
+    });
     $editInput.addEventListener('input', function () { autosizeEdit(); renderEditPreview(); });
     $editSource.addEventListener('input', autosizeEdit);
     [$editMethod, $editTranslit, $editIgnore].forEach(function (el) { el.addEventListener('change', renderEditPreview); });
@@ -1322,7 +1356,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     });
     // onCloseStart 而不是 onCloseEnd：背景分頁裡動畫不推進，End 不會來（家族 memory animation-complete-callbacks-stall）
     M.Modal.init($recModal, {
-      onCloseStart: function () { $recType.blur(); saveType(); $recSource.blur(); saveSource(); $recTitle.blur(); endEdit(); disarm(); saveTitle(); }   // 只收尾標題；清單只在它自己被改時寫
+      onCloseStart: function () { $recType.blur(); saveType(); $recSource.blur(); saveSource(); $recTitle.blur(); endEdit(); endView(); disarm(); saveTitle(); }   // 只收尾標題；清單只在它自己被改時寫
     });
 
     var saved = 'dark';

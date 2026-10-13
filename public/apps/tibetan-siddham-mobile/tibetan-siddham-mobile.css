@@ -776,7 +776,7 @@ code {
   text-overflow: ellipsis;
 }
 
-/* 列上的動作鈕（編輯／取代／刪除）與「全部清除」：44px 觸控目標。上膛（再按一次才執行）時反白 */
+/* 列上的動作鈕（編輯／放大閱讀／刪除）與「全部清除」：44px 觸控目標。上膛（再按一次才執行）時反白 */
 .records-sheet .rec-btn {
   flex: none;
   display: inline-flex;
@@ -811,6 +811,47 @@ code {
   user-select: text;
 }
 .rec-json.is-empty { color: var(--muted); font-family: inherit; }
+
+/* ===== 放大閱讀某一筆〔owner 2026-10-13〕 =====
+ * #records-modal.is-viewing（控制器掛）：這一頁出現，面板裡其餘的與底列原本的鈕收起，底列只剩「返回清單」。
+ * ⭐ 藏文以 **font-size: 2em** 顯示〔owner 指定的大小〕——.rec-view 自己把基準定成 1rem，2em 才是一個算得出來的值（＝主畫面輸出欄的 2rem）。
+ *    行高與留底照主畫面那一欄（.tibetan-text）：那兩個數字是量過的，字級相同就沿用。整段都顯示、不截斷；長的時候捲的是面板。 */
+.rec-view,
+.records-sheet .modal-footer .rec-view-only { display: none; }
+.records-sheet.is-viewing .rec-view { display: block; font-size: 1rem; }
+.records-sheet.is-viewing .modal-content > :not(.rec-view) { display: none; }
+.records-sheet.is-viewing .modal-footer > :not(.rec-view-only) { display: none; }
+.records-sheet.is-viewing .modal-footer .rec-view-only { display: inline-block; }
+.rec-view-head { margin-top: 0; }
+.rec-view-head h3 { min-width: 0; color: var(--text); font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-view-types { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rec-view-types:empty { display: none; }
+.rec-view-types .rec-type { color: var(--muted); font-size: .8rem; line-height: 1.6; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; }
+.rec-view-text {
+  margin-top: 10px;
+  color: var(--text);
+  font-family: var(--tibetan-font);
+  font-size: 2em;
+  line-height: 2.1;
+  padding-bottom: .5em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.rec-view-text.is-error { font-family: inherit; font-size: .9rem; line-height: 1.6; color: var(--danger); padding-bottom: 0; }
+.rec-view-latin {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.rec-view-source { margin-top: 12px; color: var(--muted); font-size: .85rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rec-view-source:empty { display: none; }
 
 /* ===== 編輯某一筆（面板內的表單）〔owner 2026-10-13〕 =====
  * #records-modal.is-editing（控制器掛）：表單出現；面板裡其餘的（抬頭、標題欄、目前的輸入、清單、JSON、說明）

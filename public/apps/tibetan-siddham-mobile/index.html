@@ -147,7 +147,7 @@
   <!-- 紀錄・JSON 輸出：Materialize bottom-sheet ＋ modal-fixed-footer（捲動的是 .modal-content，底列固定）。
        一筆紀錄＝標題＋當時的輸入＋選項；**標題可以重複、可以留空**（同一部咒語分好幾段記）。
        ⚠️ 標題欄放在最上面：iOS 鍵盤彈出時不縮 layout viewport，bottom-sheet 的下半截會被鍵盤蓋住，上緣不會。
-       ⚠️ 沒有 window.confirm（Artifacts 的 iframe 裡它直接回 false）——取代／刪除／清除都是「再按一次」。 -->
+       ⚠️ 沒有 window.confirm（Artifacts 的 iframe 裡它直接回 false）——刪除／清除都是「再按一次」。 -->
   <div id="records-modal" class="modal bottom-sheet modal-fixed-footer records-sheet">
     <div class="modal-content">
       <h2 class="sheet-title" data-i18n="rec.title">紀錄・JSON 輸出</h2>
@@ -212,6 +212,21 @@
             <span data-i18n="opt.ignoreSpaces">忽略空格與連字號</span>
           </label>
         </div>
+      </div>
+      <!-- 放大閱讀某一筆〔owner 2026-10-13〕：按清單上那一筆、在編輯與刪除之間的那一顆（👁；那個位置原本是「取代」），
+           面板換成這一頁（其餘先收起——#records-modal.is-viewing，由控制器掛）：那一筆的藏文以 font-size: 2em 顯示。
+           ⚠️ 唯讀：這一頁沒有任何會寫東西的鈕，只有返回。內容由控制器的 renderView 填。 -->
+      <div id="rec-view" class="rec-view">
+        <div class="rec-heading rec-view-head">
+          <h3 id="rec-view-heading"></h3>
+          <a href="#!" class="rec-btn" data-view="close" data-i18n-title="rec.viewBack" title="返回清單">
+            <i class="material-icons">close</i>
+          </a>
+        </div>
+        <div id="rec-view-types" class="rec-view-types"></div>
+        <div id="rec-view-text" class="rec-view-text"></div>
+        <div id="rec-view-latin" class="rec-view-latin"></div>
+        <div id="rec-view-source" class="rec-view-source"></div>
       </div>
       <!-- 外層是 div 不是 label：清除鈕放在 label 裡的話，按它會連帶觸發 label 的預設動作（聚焦標題欄＝鍵盤彈出來） -->
       <div class="opt-field">
@@ -280,6 +295,8 @@
       <a href="#!" id="rec-download" class="btn-flat"><i class="material-icons left">file_download</i><span data-i18n="rec.download">下載</span></a>
       <a href="#!" class="modal-close btn-flat" data-i18n="opt.done">完成</a>
       <!-- 編輯中：底列換成這兩顆（上面三顆收起）。與表單第一列的兩顆圖示是同一對動作 -->
+      <!-- 放大閱讀中：底列只剩這一顆 -->
+      <a href="#!" class="btn-flat rec-view-only" data-view="close" data-i18n="rec.viewBack">返回清單</a>
       <a href="#!" class="btn-flat rec-edit-only" data-edit="cancel" data-i18n="rec.editCancel">取消</a>
       <a href="#!" class="btn-flat rec-edit-only rec-edit-ok" data-edit="save"><i class="material-icons left">check</i><span data-i18n="rec.editSave">儲存</span></a>
     </div>
