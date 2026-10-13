@@ -66,7 +66,7 @@ public/apps/tibetan-siddham-mobile/
     類型是**自由文字＋快選鈕**（預設「真言」「種子字」＋清單裡用過的）——不要改成固定選單，也不要把預設的詞搬進 locales；編輯表單裡那一排快選鈕只動表單那一格。
     ⚠️ 新增一個紀錄欄位要動**四個地方**，漏一個都不會報錯：lib 的 `makeRecord`（白名單）、`buildExport`、`artifact/src/remote-db.js` 的寫入與讀回各一處、
     `scripts/backup-artifact.sh` 的 `body()`。兩格的值各自一格存，規矩同第 12 條。舊紀錄沒有這兩欄＝空字串。第 ㊳㊴ 條（DESIGN §8、bm §10.6、§10.7）。
-16. **原始碼不要寫 `\uXXXX` 跳脫**：寫檔工具會把它換成實體字元。碼位用 `String.fromCodePoint(0x…)`（`verify.js` 全檔如此）。
+18. **原始碼不要寫 `\uXXXX` 跳脫**：寫檔工具會把它換成實體字元。碼位用 `String.fromCodePoint(0x…)`（`verify.js` 全檔如此）。
 
 ## 複製件登記
 
