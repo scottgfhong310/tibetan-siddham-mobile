@@ -24,6 +24,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   var KEYSET_KEY = 'tibetan-siddham-mobile-keyset'; // KEYSET_IDS 之一（lib）：記號列現在是哪一組
   var REC_KEY = 'tibetan-siddham-mobile-records';   // { items }（TibetanSiddhamMobileLib.normalizeStore）：紀錄清單——**只在增刪改某一筆時寫**
   var REC_TITLE_KEY = 'tibetan-siddham-mobile-rec-title';   // 標題欄現在的值——改標題只寫這一格，碰不到清單
+  var REC_SOURCE_KEY = 'tibetan-siddham-mobile-rec-source';   // 來源欄現在的值——同一條規矩：自己一格，碰不到清單
+  var REC_TYPE_KEY = 'tibetan-siddham-mobile-rec-type';   // 類型欄現在的值——同上
 
   var converter = new TibetanSiddhamConverter();
   var setIconDone = window.SideTool.setIconDone;
@@ -36,9 +38,13 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   var $ignoreSpaces = document.getElementById('opt-ignore-spaces');
   var $recModal = document.getElementById('records-modal');
   var $recTitle = document.getElementById('rec-title');
+  var $recSource = document.getElementById('rec-source');
+  var $recType = document.getElementById('rec-type');
   // 編輯某一筆的表單（紀錄面板裡；見「編輯某一筆」那一段）
   var $editTitle = document.getElementById('rec-edit-title');
   var $editInput = document.getElementById('rec-edit-input');
+  var $editSource = document.getElementById('rec-edit-source');
+  var $editType = document.getElementById('rec-edit-type');
   var $editMethod = document.getElementById('rec-edit-input-method');
   var $editTranslit = document.getElementById('rec-edit-translit');
   var $editIgnore = document.getElementById('rec-edit-ignore-spaces');
@@ -49,11 +55,11 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
 
   // ready＝藏文對照表載好了（之前不轉）；tableFailed＝載不到時的原因（字串；畫面上要講）
   var state = { theme: 'dark', baseline: 0, saveTimer: 0, keyset: 'vowel', assist: null, assistFailed: false, ready: false, tableFailed: '',
-    rec: { title: '', items: [] }, recRaw: null, recSaveTimer: 0, storageOk: true, storageLost: false, storageWarned: false, armed: null, armTimer: 0,
+    rec: { title: '', type: '', source: '', items: [] }, recRaw: null, recSaveTimer: 0, recSourceTimer: 0, recTypeTimer: 0, storageOk: true, storageLost: false, storageWarned: false, armed: null, armTimer: 0,
     edit: null,   // 正在編輯的那一筆：{ id, orig, scroll }（沒有在編輯時是 null）
     // 同步（只有 Artifacts 版有，見「同步」那一段）：on＝清單已改由資料庫作主；last＝資料庫送來的那一份；
     // put／del＝這個畫面送出、還沒被確認的寫入；local＝連上之前就在這支瀏覽器裡的（等第一份完整清單到了再決定送不送）
-    remote: { started: false, on: false, ready: false, down: '', unsynced: false, migrated: false, last: [], put: {}, del: {}, local: {}, titleTimer: 0, titleSent: null } };
+    remote: { started: false, on: false, ready: false, down: '', unsynced: false, migrated: false, last: [], put: {}, del: {}, local: {}, titleTimer: 0, titleSent: null, sourceTimer: 0, sourceSent: null, typeTimer: 0, typeSent: null } };
 
   /* ---------- 外殼：貼齊可見範圍 ----------
    * iOS Safari 鍵盤彈出時不縮 layout viewport、而且會把頁面往上推；只有 visualViewport
@@ -83,7 +89,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
 
   function typingInSheet() {
     var a = document.activeElement;
-    return a === $recTitle || a === $editTitle || a === $editInput;
+    return a === $recTitle || a === $recType || a === $recSource || a === $editTitle || a === $editType || a === $editSource || a === $editInput;
   }
 
   /* ---------- 輸入框長高 ---------- */
@@ -322,7 +328,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   }
 
   /* ---------- 紀錄清單・JSON 輸出 ----------
-   * 一筆紀錄＝標題＋當時的輸入＋當時的選項（lib 的 makeRecord）。**標題可以重複、可以留空**〔bonji-mobile，owner 2026-10-11〕：
+   * 一筆紀錄＝標題＋類型＋來源＋當時的輸入＋當時的選項（lib 的 makeRecord；類型與來源見下面各自那一段）。**標題可以重複、可以留空**〔bonji-mobile，owner 2026-10-11〕：
    * 一部咒語分好幾段記，每一段掛同一個標題 ⇒ 加入時不查重、不覆寫。
    * 藏文／拉丁／碼位不存：列清單與輸出 JSON 的當下，每一筆用**它自己的**選項現算（convertWith）。
    * ⚠️ 清單存在 localStorage——**那是這支瀏覽器的方便，不是備份**：可能不在、會丟例外、或（iOS 上的 Artifacts 版）
@@ -363,7 +369,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     state.recRaw = raw;
     var t = readRaw(REC_TITLE_KEY);
     // 舊格式把標題與清單放在同一格：新的那一格還沒有的時候沿用它
-    return { title: t != null ? Lib.normalizeTitle(t) : st.title, items: st.items };
+    return { title: t != null ? Lib.normalizeTitle(t) : st.title, type: Lib.normalizeType(readRaw(REC_TYPE_KEY)),
+      source: Lib.normalizeSource(readRaw(REC_SOURCE_KEY)), items: st.items };
   }
 
   /* 動清單之前先看儲存區：別的畫面可能已經改過它。'changed' ⇒ 記憶裡的那一份作廢，改用儲存區的
@@ -393,6 +400,29 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     state.recSaveTimer = setTimeout(saveTitle, 300);
   }
 
+  /* 來源欄〔owner 2026-10-13〕：面板上標題欄底下那一格，行為照標題欄——加入一筆時帶入它現在的值
+   * （同一部咒語分好幾段記，來源只要填一次），每一筆之後可在編輯表單裡各自改。
+   * ⚠️ 存法也照標題：**自己一格**（REC_SOURCE_KEY）、只在自己被改時寫；這幾條路上沒有任何一行碰得到清單。 */
+  function saveSource() {
+    clearTimeout(state.recSourceTimer);
+    try { localStorage.setItem(REC_SOURCE_KEY, state.rec.source); } catch (e) {}
+  }
+  function saveSourceSoon() {
+    clearTimeout(state.recSourceTimer);
+    state.recSourceTimer = setTimeout(saveSource, 300);
+  }
+
+  /* 類型欄〔owner 2026-10-13〕：這一筆是什麼（真言／種子字／…）。自由文字＋快選鈕（lib 的 typeChoices）；
+   * 行為與存法照標題欄與來源欄——加入時帶入、**自己一格**（REC_TYPE_KEY）、這幾條路上沒有任何一行碰得到清單。 */
+  function saveType() {
+    clearTimeout(state.recTypeTimer);
+    try { localStorage.setItem(REC_TYPE_KEY, state.rec.type); } catch (e) {}
+  }
+  function saveTypeSoon() {
+    clearTimeout(state.recTypeTimer);
+    state.recTypeTimer = setTimeout(saveType, 300);
+  }
+
   // 只有增刪改某一筆的那幾條路（addCurrent／recAction／saveEdit）會走到這裡，而且它們都先 syncItems() 過
   function saveItems() {
     if (remoteOn()) return;   // 同上：這支瀏覽器裡不留第二份（留著的話，別台刪掉的紀錄日後會從這裡被送回去）
@@ -411,7 +441,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   // keep：取代某一筆時傳它進來——身分（id）與位置（order）沿用，分段的順序就是資料
   function currentRecord(keep) {
     return Lib.makeRecord($recTitle.value, $input.value, readOptions(), new Date().toISOString(),
-      keep ? keep.id : newId(), keep ? keep.order : 0);
+      keep ? keep.id : newId(), keep ? keep.order : 0, $recSource.value, $recType.value);
   }
   function titleOr(t) { return t || I18n.t('rec.untitled'); }
   function recToast(key, params, cls, ms) {
@@ -442,10 +472,16 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     rec.order = Lib.nextOrder(state.rec.items, Date.now());
     state.rec.items = Lib.addRecord(state.rec.items, rec);
     state.rec.title = rec.title;
+    state.rec.source = rec.source;
+    state.rec.type = rec.type;
     saveItems();
     saveTitle();
+    saveSource();
+    saveType();
     pushPut(rec);
     pushTitle();
+    pushSource();
+    pushType();
     renderRecords();
     setIconDone(trigger);
     // 短一點：toast 在頁首上方，停太久會擋住紀錄鈕（加完常常接著就要開面板）
@@ -483,12 +519,20 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       disarm();
       $recTitle.value = it.title;
       state.rec.title = it.title;
+      $recSource.value = it.source;   // 來源跟著那一筆回來（之後按取代，來源才不會被面板上別的值換掉）
+      state.rec.source = it.source;
+      $recType.value = it.type;       // 類型同上
+      state.rec.type = it.type;
       $inputMethod.value = it.options.inputMethod;
       $translit.value = it.options.transliteration;
       $ignoreSpaces.checked = it.options.ignoreSpacesAndHyphens;
       $input.value = it.input;
       saveTitle();
       pushTitle();
+      saveSource();
+      pushSource();
+      saveType();
+      pushType();
       onInput();
       M.Modal.getInstance($recModal).close();
       recToast('rec.toast.loaded', { n: n, t: titleOr(it.title) }, 'teal');
@@ -501,10 +545,16 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       disarm();
       state.rec.items = Lib.replaceRecord(items, i, rec);
       state.rec.title = rec.title;
+      state.rec.source = rec.source;
+      state.rec.type = rec.type;
       saveItems();
       saveTitle();
+      saveSource();
+      saveType();
       pushPut(rec);
       pushTitle();
+      pushSource();
+      pushType();
       renderRecords();
       recToast('rec.toast.replaced', { n: n }, 'teal');
       return;
@@ -529,6 +579,48 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     pushTitle();
     setIconDone(trigger);
     recToast('rec.toast.titleCleared', null, 'grey', 1800);
+  }
+
+  // 只清來源欄（清單裡已經記下的各筆不動；標題欄也不動——換一部咒語時兩顆各按一次）
+  function clearSource(trigger) {
+    if (!$recSource.value) return;
+    $recSource.value = '';
+    state.rec.source = '';
+    grow($recSource);
+    saveSource();
+    pushSource();
+    setIconDone(trigger);
+    recToast('rec.toast.sourceCleared', null, 'grey', 1800);
+  }
+
+  // 面板上的類型欄換成 v（打字、點快選鈕、清除都走這裡）：只寫類型那一格
+  function setPanelType(v, soon) {
+    state.rec.type = Lib.normalizeType(v);
+    if (soon) { saveTypeSoon(); pushTypeSoon(); } else { saveType(); pushType(); }
+    renderTypeChips();
+  }
+  // 只清類型欄（清單裡已經記下的各筆、標題欄、來源欄都不動）
+  function clearType(trigger) {
+    if (!$recType.value) return;
+    $recType.value = '';
+    setPanelType('');
+    setIconDone(trigger);
+    recToast('rec.toast.typeCleared', null, 'grey', 1800);
+  }
+
+  // 快選鈕（面板上與編輯表單裡各一排，.rec-chips[data-for=<那一格的 id>]）：詞由 lib 給，亮著的那一顆＝那一格現在的值
+  function renderTypeChips() {
+    var choices = Lib.typeChoices(state.rec.items);
+    $recModal.querySelectorAll('.rec-chips').forEach(function (box) {
+      var cur = Lib.normalizeType(document.getElementById(box.getAttribute('data-for')).value);
+      box.textContent = '';
+      choices.forEach(function (t) {
+        var b = node('button', 'rec-chip' + (t === cur ? ' active' : ''), t);
+        b.type = 'button';
+        b.setAttribute('data-type', t);
+        box.appendChild(b);
+      });
+    });
   }
 
   // 面板上「目前的輸入」那一格＝按「加入清單」會記下的那一段（空的時候加入鈕停用）
@@ -613,6 +705,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       head.appendChild(node('span', 'rec-seq', String(r.seq)));
       head.appendChild(node('span', 'rec-name' + (r.title ? '' : ' is-empty'), titleOr(r.title)));
       if (total['t:' + r.title] > 1) head.appendChild(node('span', 'rec-part', I18n.t('rec.part', { p: r.part })));
+      if (r.type) head.appendChild(node('span', 'rec-type', r.type));
       main.appendChild(head);
       // 轉不出來的那一筆把原因寫在原本放藏文的那一行——不留白
       main.appendChild(r.output
@@ -620,6 +713,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
         : node('span', 'rec-err', I18n.t('toast.convertFail', { m: r.error || '' })));
       // 記法裡的連續空格有意義（兩個＝tsheg、三個＝全形空格）⇒ 這一行以 white-space:pre 顯示；換行改畫成 ↵，維持單行
       main.appendChild(node('span', 'rec-in mono', r.input.replace(/\n/g, ' ↵ ')));
+      // 有來源的那一筆多一行（單行、截斷；全文在編輯表單裡看）
+      if (r.source) main.appendChild(node('span', 'rec-src', I18n.t('rec.sourceLine', { s: r.source.replace(/\s*\n\s*/g, '／') })));
       li.appendChild(main);
       li.appendChild(recButton('edit', i, 'edit', 'rec.edit', false));
       li.appendChild(recButton('replace', i, 'system_update_alt', 'rec.replace', false));
@@ -629,6 +724,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     renderRecCurrent();
     renderRecNote();
     renderEditChrome();
+    renderTypeChips();   // 清單變了，用過的類型也跟著變
   }
 
   /* ---------- 編輯某一筆〔owner 2026-10-13〕 ----------
@@ -648,12 +744,17 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
   }
   // 表單現在的內容算成一筆：沒有更動＝回 orig 本身、記法被清空＝null（lib 的 editRecord）
   function editDraft(savedAt) {
-    return Lib.editRecord(state.edit.orig, $editTitle.value, $editInput.value, readEditOptions(), savedAt);
+    return Lib.editRecord(state.edit.orig, $editTitle.value, $editInput.value, readEditOptions(), savedAt, $editSource.value, $editType.value);
   }
 
+  // textarea 跟著內容長高（面板裡那三格共用）。⚠️ 面板沒顯示時 scrollHeight 是 0——那時由 CSS 的 min-height 兜底，開面板時再量一次
+  function grow(el) {
+    el.style.height = 'auto';
+    el.style.height = (el.scrollHeight + 2) + 'px';   // border-box ⇒ 內容高 ＋ 上下框線
+  }
   function autosizeEdit() {
-    $editInput.style.height = 'auto';
-    $editInput.style.height = ($editInput.scrollHeight + 2) + 'px';   // border-box ⇒ 內容高 ＋ 上下框線
+    grow($editInput);
+    grow($editSource);
   }
 
   // 轉換結果跟著表單走（用表單上的選項，不是畫面上的）。轉不出來把原因寫在同一格——不留白
@@ -690,6 +791,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     var box = $recModal.querySelector('.modal-content');
     state.edit = { id: it.id, orig: it, scroll: box.scrollTop };
     $editTitle.value = it.title;
+    $editType.value = it.type;
+    $editSource.value = it.source;
     $editInput.value = it.input;
     $editMethod.value = it.options.inputMethod;
     $editTranslit.value = it.options.transliteration;
@@ -708,6 +811,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     state.edit = null;
     $editTitle.blur();
     $editInput.blur();
+    $editSource.blur();
+    $editType.blur();
     M.Modal.getInstance($recModal).options.dismissible = true;
     disarm();
     renderRecords();
@@ -785,6 +890,24 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
         state.rec.title = t;
         $recTitle.value = t;
         saveTitle();
+      },
+      onSource: function (s) {
+        s = Lib.normalizeSource(s);
+        rm.sourceSent = s;
+        if (document.activeElement === $recSource || s === state.rec.source) return;   // 正在打的那一欄不搶
+        state.rec.source = s;
+        $recSource.value = s;
+        grow($recSource);
+        saveSource();
+      },
+      onType: function (t) {
+        t = Lib.normalizeType(t);
+        rm.typeSent = t;
+        if (document.activeElement === $recType || t === state.rec.type) return;   // 正在打的那一欄不搶
+        state.rec.type = t;
+        $recType.value = t;
+        saveType();
+        renderTypeChips();
       },
       onDown: function (code) {
         rm.down = String(code || 'unavailable');
@@ -872,6 +995,32 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     if (state.remote.on) state.remote.titleTimer = setTimeout(pushTitle, 800);
   }
 
+  // 來源欄的值同上（state/source）；值沒變就不寫
+  function pushSource() {
+    var rm = state.remote;
+    clearTimeout(rm.sourceTimer);
+    if (!rm.on || rm.sourceSent === state.rec.source) return;
+    rm.sourceSent = state.rec.source;
+    window.TibetanSiddhamMobileRemote.setSource(state.rec.source).then(null, function () { rm.sourceSent = null; });
+  }
+  function pushSourceSoon() {
+    clearTimeout(state.remote.sourceTimer);
+    if (state.remote.on) state.remote.sourceTimer = setTimeout(pushSource, 800);
+  }
+
+  // 類型欄的值同上（state/type）
+  function pushType() {
+    var rm = state.remote;
+    clearTimeout(rm.typeTimer);
+    if (!rm.on || rm.typeSent === state.rec.type) return;
+    rm.typeSent = state.rec.type;
+    window.TibetanSiddhamMobileRemote.setType(state.rec.type).then(null, function () { rm.typeSent = null; });
+  }
+  function pushTypeSoon() {
+    clearTimeout(state.remote.typeTimer);
+    if (state.remote.on) state.remote.typeTimer = setTimeout(pushType, 800);
+  }
+
   // 面板底下那一行：清單現在存在哪裡。沒有同步的那一份（GitHub／3001）恆是「只存在這支瀏覽器裡」。
   function renderRecNote() {
     var el = document.getElementById('rec-note'), rm = state.remote;
@@ -897,6 +1046,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     M.Modal.getInstance($recModal).open();
     // modal-fixed-footer ⇒ 捲動的是 .modal-content，它會留在上次關掉時的位置；歸零要在 open() 之後（之前是 display:none）
     $recModal.querySelector('.modal-content').scrollTop = 0;
+    grow($recSource);   // 同上：要在面板顯示出來之後量
   }
 
   /* 下載一段文字。回傳 Promise<boolean>：true＝交給瀏覽器了；false＝使用者自己取消（不是錯誤、不必講）。
@@ -982,6 +1132,42 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       pushTitleSoon();
     });
 
+    // 來源：同標題，邊打邊存（只寫它自己那一格）
+    $recSource.addEventListener('input', function () {
+      state.rec.source = Lib.normalizeSource($recSource.value);
+      grow($recSource);
+      saveSourceSoon();
+      pushSourceSoon();
+    });
+    // 清除來源：同清除標題——擋 mousedown，焦點維持原狀
+    var sourceClear = document.getElementById('rec-source-clear');
+    sourceClear.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    sourceClear.addEventListener('click', function (e) { e.preventDefault(); clearSource(sourceClear); });
+
+    // 類型：邊打邊存（只寫它自己那一格）；單行欄位，Enter＝打完了
+    $recType.addEventListener('input', function () { setPanelType($recType.value, true); });
+    var typeClear = document.getElementById('rec-type-clear');
+    typeClear.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    typeClear.addEventListener('click', function (e) { e.preventDefault(); clearType(typeClear); });
+    $editType.addEventListener('input', renderTypeChips);
+    [$recType, $editType].forEach(function (el) {
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      });
+    });
+    // 快選鈕：點一顆＝填進它那一格。擋 mousedown ⇒ 焦點維持原狀（鍵盤不會跳出來，正在打別格時也不會收起來）
+    $recModal.addEventListener('mousedown', function (e) {
+      if (e.target.closest('.rec-chip')) e.preventDefault();
+    });
+    $recModal.addEventListener('click', function (e) {
+      var c = e.target.closest('.rec-chip');
+      if (!c) return;
+      e.preventDefault();
+      var v = c.getAttribute('data-type');
+      if (c.parentNode.getAttribute('data-for') === 'rec-edit-type') { $editType.value = v; renderTypeChips(); }
+      else { $recType.value = v; setPanelType(v); }
+    });
+
     // 別的分頁改了清單 ⇒ 這邊跟著換（只在「別的文件」寫入時才會收到這個事件）。key 為 null＝整個儲存區被清空
     window.addEventListener('storage', function (e) {
       if (e.key !== REC_KEY && e.key !== null) return;
@@ -1004,11 +1190,12 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       if (a.getAttribute('data-edit') === 'save') saveEdit(); else cancelEdit();
     });
     $editInput.addEventListener('input', function () { autosizeEdit(); renderEditPreview(); });
+    $editSource.addEventListener('input', autosizeEdit);
     [$editMethod, $editTranslit, $editIgnore].forEach(function (el) { el.addEventListener('change', renderEditPreview); });
     $editTitle.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); $editTitle.blur(); }
     });
-    [$editTitle, $editInput].forEach(function (el) {
+    [$editTitle, $editInput, $editSource, $editType, $recSource, $recType].forEach(function (el) {
       el.addEventListener('blur', function () { setTimeout(fitShell, 0); });
     });
   }
@@ -1132,7 +1319,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     });
     // onCloseStart 而不是 onCloseEnd：背景分頁裡動畫不推進，End 不會來（家族 memory animation-complete-callbacks-stall）
     M.Modal.init($recModal, {
-      onCloseStart: function () { $recTitle.blur(); endEdit(); disarm(); saveTitle(); }   // 只收尾標題；清單只在它自己被改時寫
+      onCloseStart: function () { $recType.blur(); saveType(); $recSource.blur(); saveSource(); $recTitle.blur(); endEdit(); disarm(); saveTitle(); }   // 只收尾標題；清單只在它自己被改時寫
     });
 
     var saved = 'dark';
@@ -1158,6 +1345,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
 
     state.rec = loadRecords();
     $recTitle.value = state.rec.title;
+    $recSource.value = state.rec.source;
+    $recType.value = state.rec.type;
     // 探針：寫進去再讀回來比對（問「localStorage 在不在」永遠回「在」）。⚠️ 只證明這一刻存得住，證明不了撐得過關掉頁面
     var probeOk = false;
     try {

@@ -29,7 +29,7 @@
 #   它擋得住的是「取回來的不是紀錄」（不是 JSON、沒有 input、id 不合格）；擋不住的是「內容被改錯了」——那要靠 log 裡那一行差異。
 #
 # 備份檔：<根>/tibetan-siddham-mobile-artifact-<yyyyMMdd-HHmmss>.json
-#   { app, source, pulledAt, count, records: [{ id, title, input, options, savedAt, order }] }（依 order、同值依 id）
+#   { app, source, pulledAt, count, records: [{ id, title, type, source, input, options, savedAt, order }] }（依 order、同值依 id；`type`＝類型、`source`＝來源，舊備份沒有這兩欄）
 #   還原：把 records 逐筆以 ArtifactData `batch`／`set` 寫回 `records/<id>`（文件內容＝去掉 id 的那一筆）。
 #
 # 環境變數（測試與發佈前那一步用；排程不設）：
@@ -131,7 +131,8 @@ try {
   if (process.env.PREV) {
     try {
       const p = JSON.parse(fs.readFileSync(process.env.PREV, "utf8")).records || [];
-      const body = (r) => JSON.stringify([r.title, r.input, r.options, r.order]);
+      // 類型與來源也是內容：只改了其中一欄也算一個不同的狀態。舊備份沒有這兩欄 ⇒ 兩邊都當成空字串比（否則升級後第一次會整份被判成「修改」）
+      const body = (r) => JSON.stringify([r.title, r.type || "", r.source || "", r.input, r.options, r.order]);
       const oldMap = new Map(p.map((r) => [r.id, r])), newMap = new Map(records.map((r) => [r.id, r]));
       const added = records.filter((r) => !oldMap.has(r.id));
       const gone = p.filter((r) => !newMap.has(r.id));

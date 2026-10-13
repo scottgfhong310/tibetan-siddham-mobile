@@ -558,6 +558,64 @@ code {
 /* 面板裡的 label 不走 Materialize 的浮動 label 樣式（它只對 .input-field 底下的生效），字級與顏色照 .opt-label */
 .records-sheet label.opt-label { color: var(--muted); font-size: .85rem; }
 
+/* 類型的快選鈕〔owner 2026-10-13〕：預設的＋清單裡用過的；點一顆＝填進上面那一格（控制器的 renderTypeChips）。
+ * 裸 <button> ⇒ Materialize 的 teal 互動底要自己蓋掉（§5.1 gotcha）。亮著的那一顆＝那一格現在的值。 */
+.rec-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.rec-chips:empty { display: none; }
+.records-sheet .rec-chip {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--text);
+  font-size: .95rem;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.records-sheet .rec-chip:hover,
+.records-sheet .rec-chip:focus { background: transparent; outline: none; }
+.records-sheet .rec-chip:active { background: var(--surface-2); }
+.records-sheet .rec-chip.active { border-color: var(--accent); color: var(--accent); }
+
+/* 來源欄〔owner 2026-10-13〕：面板上那一格與編輯表單裡那一格共用。多行的自由文字，不是記法 ⇒ 不用等寬字。
+ * ⚠️ 字級走 --ctl-font（第 ⑩ 條）；不用 .materialize-textarea（第 ⑫ 條），高度由控制器的 grow() 給——
+ *    面板沒顯示時量到的 scrollHeight 是 0，由這裡的 min-height 兜底。0,2,1 贏過 Materialize 的 textarea（0,0,1）。 */
+.records-sheet textarea.rec-source-input {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  height: 46px;
+  min-height: 46px;
+  max-height: 28vh;
+  margin: 0;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: var(--ctl-font);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  resize: none;
+  overflow-y: auto;
+}
+.records-sheet textarea.rec-source-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  outline: none;
+}
+.rec-source-row { align-items: flex-start; margin-top: 2px; }
+
 /* 「目前的輸入」＋ 加入鈕 */
 .rec-current {
   display: flex;
@@ -687,6 +745,30 @@ code {
   color: var(--muted);
   font-size: .8rem;
   white-space: pre;             /* 不是 nowrap：連續空格是記法（控制器已把換行換成 ↵） */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 類型：有類型的那一筆，標題那一行多一顆（比「第 n 段」淡——那一顆是位置，這一顆是分類） */
+.rec-head .rec-type {
+  flex: none;
+  max-width: 8em;
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1.5;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 來源那一行：有來源的那一筆才有；單行截斷，全文在編輯表單裡看 */
+.rec-main .rec-src {
+  color: var(--muted);
+  font-size: .75rem;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }

@@ -534,7 +534,7 @@ check('㉙ JSON 輸出：每筆用自己的選項現算；轉不出來的那一�
   if (r1 && r1.output && (r1.output.tibetan !== C(0x0F66, 0x0F72, 0x0F51, 0x0FA1, 0x0FB7, 0x0F7E) || r1.output.codepoints !== 'U+0F66 U+0F72 U+0F51 U+0FA1 U+0FB7 U+0F7E')) bad.push('tibetan／codepoints');
   if (!r1 || r1.input !== 'siddha;m' || r1.savedAt !== 'A') bad.push('input／savedAt 沒有原樣帶出');
   const keys = r1 ? Object.keys(r1).join(',') : '';
-  if (keys !== 'seq,part,title,options,input,output,savedAt') bad.push('一筆的欄位變了：' + keys);
+  if (keys !== 'seq,part,title,type,source,options,input,output,savedAt') bad.push('一筆的欄位變了：' + keys);
   const exp2 = L.buildExport(items, (i, o) => { if (o.transliteration === 'ISO15919') throw new Error('boom'); return conv(i, o); }, 'T');
   if (exp2.count !== 2 || exp2.records.length !== 2 || !exp2.records[0].output || exp2.records[1].output !== null || exp2.records[1].error !== 'boom') bad.push('轉不出來的那一筆沒有留下 output:null ＋ error');
   // 控制器餵給 buildExport 的那支：每一筆各自一個轉換器（不是畫面上那一個——它帶的是「現在」的選項）
@@ -550,8 +550,12 @@ check('㉚ normalizeStore', (w) => {
     { title: 5, input: 'o;m', options: { inputMethod: 'x' }, savedAt: 7 }, { title: 't', input: '  ' }, 'junk', null,
     { title: 't', input: 'hrii.h', options: kh, savedAt: 'S', extra: 1 }] });
   const ok = s.title === 'a b' && s.items.length === 2 &&
-    eq(s.items[0], { title: '', input: 'o;m', options: d, savedAt: '', id: '', order: 0 }) &&
-    eq(s.items[1], { title: 't', input: 'hrii.h', options: kh, savedAt: 'S', id: '', order: 0 }) &&
+    eq(s.items[0], { title: '', type: '', source: '', input: 'o;m', options: d, savedAt: '', id: '', order: 0 }) &&
+    eq(s.items[1], { title: 't', type: '', source: '', input: 'hrii.h', options: kh, savedAt: 'S', id: '', order: 0 }) &&
+    // 類型（第 ㊴ 條）：字串才收、單行（空白收成一個、去頭尾）；不是字串當成空的
+    eq(L.normalizeStore({ items: [{ input: 'a', type: '  種子 \n 字 ' }, { input: 'b', type: 5 }, { input: 'c', type: ['真言'] }] }).items.map((i) => i.type), ['種子 字', '', '']) &&
+    // 來源（第 ㊳ 條）：字串才收、換行統一、去頭尾空白；不是字串當成空的
+    eq(L.normalizeStore({ items: [{ input: 'a', source: '  T20\r\np.107a \n' }, { input: 'b', source: 5 }, { input: 'c', source: { x: 1 } }] }).items.map((i) => i.source), ['T20\np.107a', '', '']) &&
     // id／order：合格的留著（它們是那一筆的身分與位置），不合格的清掉（id 會被拿去當文件路徑）
     eq(L.normalizeStore({ items: [{ input: 'a', id: 'r1_x-9', order: 7 }, { input: 'b', id: 'a/b', order: 'x' }] }).items.map((i) => i.id + ':' + i.order), ['r1_x-9:7', ':0']) &&
     eq(L.normalizeStore(null), { title: '', items: [] }) && eq(L.normalizeStore({ items: 'x' }), { title: '', items: [] });
@@ -583,7 +587,7 @@ check('㉛ 紀錄面板在手機上：加入不收鍵盤／不放大／不用 co
   // 面板裡會叫出鍵盤的欄位：標題欄，以及編輯表單的標題與記法（第 ㊲ 條）
   if (!/if \(!focused && !typingInSheet\(\)\) state\.baseline = box\.height;/.test(w.js)) miss.push('標題欄有焦點時仍更新鍵盤基準');
   const tis = fnBody(w.js, 'typingInSheet');
-  if (!['$recTitle', '$editTitle', '$editInput'].every((v) => tis.indexOf('a === ' + v) > 0)) miss.push('typingInSheet 少算了會叫出鍵盤的欄位');
+  if (!['$recTitle', '$recType', '$recSource', '$editTitle', '$editType', '$editSource', '$editInput'].every((v) => tis.indexOf('a === ' + v) > 0)) miss.push('typingInSheet 少算了會叫出鍵盤的欄位');
   return miss.length ? 'FAIL: ' + miss.join('、') : true;
 });
 
@@ -616,7 +620,15 @@ check('㉝ 改標題不碰清單；動清單前先看儲存區', (w) => {
     clearTitle: fnBody(w.js, 'clearTitle'),
     saveTitle: fnBody(w.js, 'saveTitle'),
     '標題欄 input': (w.js.match(/\$recTitle\.addEventListener\('input', function \(\) \{[\s\S]*?\n    \}\);/) || [''])[0],
-    '面板關閉': (w.js.match(/M\.Modal\.init\(\$recModal, \{[\s\S]*?\n    \}\);/) || [''])[0]
+    '面板關閉': (w.js.match(/M\.Modal\.init\(\$recModal, \{[\s\S]*?\n    \}\);/) || [''])[0],
+    // 來源欄（第 ㊳ 條）與標題欄同一條規矩
+    clearSource: fnBody(w.js, 'clearSource'),
+    saveSource: fnBody(w.js, 'saveSource'),
+    '來源欄 input': (w.js.match(/\$recSource\.addEventListener\('input', function \(\) \{[\s\S]*?\n    \}\);/) || [''])[0],
+    // 類型欄（第 ㊴ 條）：打字、點快選鈕、清除都走 setPanelType
+    setPanelType: fnBody(w.js, 'setPanelType'),
+    clearType: fnBody(w.js, 'clearType'),
+    saveType: fnBody(w.js, 'saveType')
   };
   for (const [name, body] of Object.entries(titlePaths)) {
     if (!body) miss.push('找不到 ' + name);
@@ -662,7 +674,11 @@ check('㉞ Artifacts 版：清單存資料庫、一筆一份文件', (w) => {
   if (!/db\.collection\(COL\)\.doc\(rec\.id\)\.set\(\{/.test(src)) miss.push('put 不是寫 records/<id> 那一份');
   if (!/db\.collection\(COL\)\.doc\(id\)\.delete\(\)/.test(src)) miss.push('remove 不是刪 records/<id> 那一份');
   const sets = [...src.matchAll(/\.set\(/g)].length;
-  if (sets !== 2) miss.push('同步那一支有 ' + sets + ' 處 set（應為 2：一筆紀錄、標題）');
+  if (sets !== 4) miss.push('同步那一支有 ' + sets + ' 處 set（應為 4：一筆紀錄、標題欄、來源欄、類型欄）');
+  // 來源（第 ㊳ 條）是那一筆自己的欄位：寫進去、讀回來都要帶著——漏了其中一邊，來源會在同步之後安靜地變成空的
+  // 類型（第 ㊴ 條）同理
+  if (!/\.set\(\{\s*title: rec\.title, type: rec\.type \|\| '', source: rec\.source \|\| '', input:/.test(src)) miss.push('put 沒有把類型與來源寫進那一筆的文件');
+  if (!/return \{ id: doc\.id, title: x\.title, type: x\.type, source: x\.source, input:/.test(src)) miss.push('讀回來的清單沒帶類型或來源');
   if (/items\s*:/.test(src)) miss.push('同步那一支出現整份清單的寫法（items:）');
   if (!/fromCache/.test(src)) miss.push('沒有分辨「還不是完整版本」的清單');
   if (!/window\.TibetanSiddhamMobileRemote = \{/.test(src) || !/window\.TibetanSiddhamMobileRemote\b/.test(w.js)) miss.push('同步那一支與控制器的接點名稱對不上');
@@ -714,6 +730,14 @@ check('㉟ 備份腳本：空的不輪替／檔數要對得上／壞的不覆蓋
     put('r1', 'o;m', 10); fs.writeFileSync(path.join(rec, 'bad.json'), JSON.stringify({ title: 'x', order: 5 }));
     if (run(2) !== 1 || backups().length !== 1 || newest().count !== 2) bad.push('不合格的文件沒有被擋下，或動到了既有備份');
     if (run(0) !== 0 || backups().length !== 1 || newest().count !== 2) bad.push('之後空的清單動到了既有備份');
+    // 來源（第 ㊳ 條）也是內容：只改了來源要另存一份，而且備份檔裡帶著那一欄；舊備份沒有這一欄不算「改過」（上面「內容相同」那一步已經驗到）
+    const stamp = backups().length ? newest().pulledAt : '';
+    fs.writeFileSync(path.join(rec, 'r2.json'), JSON.stringify({ title: 't', source: '大正藏 T20', input: 'va jra', options: {}, savedAt: 'S', order: 20 })); put('r1', 'o;m', 10);   // ⚠️ 記法要與上面那一份逐字相同——差的只能是來源（第一版照抄 bonji-mobile 的記法，於是「記法也變了」，備份不比來源的注入照樣過）
+    if (run(2) !== 0 || newest().pulledAt === stamp || (newest().records.find((r) => r.id === 'r2') || {}).source !== '大正藏 T20') bad.push('只改了來源沒有另存，或備份檔沒帶來源');
+    // 類型（第 ㊴ 條）同理：這一次差的只有類型（記法與來源都與上一份逐字相同）
+    const stamp2 = backups().length ? newest().pulledAt : '';
+    fs.writeFileSync(path.join(rec, 'r2.json'), JSON.stringify({ title: 't', type: '真言', source: '大正藏 T20', input: 'va jra', options: {}, savedAt: 'S', order: 20 })); put('r1', 'o;m', 10);
+    if (run(2) !== 0 || newest().pulledAt === stamp2 || (newest().records.find((r) => r.id === 'r2') || {}).type !== '真言') bad.push('只改了類型沒有另存，或備份檔沒帶類型');
     return bad.length ? 'FAIL: ' + bad.join('、') : true;
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -821,7 +845,7 @@ check('㊲ 編輯某一筆：只改那一筆、認 id、出口只有儲存／取
   if (L.editRecord(o, '大悲咒', 'na mo', dflt, 'NEW') !== o) miss.push('沒有更動時沒有回原來那一筆（會白寫一次、savedAt 變成今天）');
   if (L.editRecord(o, '  大悲咒 ', 'na mo', { inputMethod: 'x' }, 'NEW') !== o) miss.push('只差在正規化會抹掉的地方也被當成更動');
   const e1 = L.editRecord(o, '心經咒', 'ga te', kh, 'NEW');
-  if (!eq(e1, { title: '心經咒', input: 'ga te', options: kh, savedAt: 'NEW', id: 'r7', order: 42 })) miss.push('改過的那一筆 = ' + JSON.stringify(e1));
+  if (!eq(e1, { title: '心經咒', type: '', source: '', input: 'ga te', options: kh, savedAt: 'NEW', id: 'r7', order: 42 })) miss.push('改過的那一筆 = ' + JSON.stringify(e1));
   const e2 = L.editRecord(o, '大悲咒', 'na mo', kh, 'NEW');
   if (!e2 || e2 === o || e2.options.inputMethod !== 'KH' || e2.id !== 'r7') miss.push('只改選項不算更動');
   const e3 = L.editRecord(o, '', 'na mo', dflt, 'NEW');
@@ -836,7 +860,7 @@ check('㊲ 編輯某一筆：只改那一筆、認 id、出口只有儲存／取
 
   const start = fnBody(w.js, 'startEdit'), save = fnBody(w.js, 'saveEdit'), end = fnBody(w.js, 'endEdit'), cancel = fnBody(w.js, 'cancelEdit');
   if (!start || !save || !end || !cancel) return 'FAIL: 找不到 startEdit／saveEdit／endEdit／cancelEdit' + (miss.length ? '；' + miss.join('、') : '');
-  const MAIN = /\$input\b|\$recTitle\b|\$inputMethod\b|\$translit\b|\$ignoreSpaces\b|state\.rec\.title|saveTitle|pushTitle|saveDraft|onInput\(/;
+  const MAIN = /\$input\b|\$recTitle\b|\$recSource\b|\$recType\b|\$inputMethod\b|\$translit\b|\$ignoreSpaces\b|state\.rec\.(title|source|type)|saveTitle|pushTitle|saveSource|pushSource|saveType|pushType|setPanelType|saveDraft|onInput\(/;
   if (MAIN.test(start)) miss.push('開始編輯時動了主畫面（輸入框／標題欄／選項）');
   if (MAIN.test(save)) miss.push('存回時動了主畫面（輸入框／標題欄／選項）');
   const iSync = save.indexOf("syncItems() === 'changed'"), iFind = save.indexOf('Lib.indexOfId(state.rec.items, ed.id)'), iRep = save.indexOf('Lib.replaceRecord(state.rec.items, i, rec)');
@@ -864,6 +888,139 @@ check('㊲ 編輯某一筆：只改那一筆、認 id、出口只有儲存／取
   const ta = (sheet.match(/<textarea id="rec-edit-input"[^>]*>/) || [''])[0];
   const lack = ['autocapitalize="off"', 'autocorrect="off"', 'spellcheck="false"'].filter((a) => ta.indexOf(a) < 0);
   if (lack.length) miss.push('記法欄少了 ' + lack.join(' '));
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㊳ 來源欄〔owner 2026-10-13：「增加一個 field，用 textarea 紀錄資料的來源」〕。
+//    (a) 每一筆各自一份 `source`（多行的自由文字、可以是空的）；JSON 輸出帶這一欄；舊紀錄沒有這一欄＝空字串，不是壞資料
+//    (b) 面板上標題欄底下有一格〔owner 選的〕：加入／取代時帶入它現在的值；載回某一筆時跟著那一筆回來
+//    (c) 存法照標題欄：自己一格、只在自己被改時寫（碰不到清單——那一半在儲存區那一條）；清除來源不動標題、不動清單
+//    (d) 編輯表單裡也有一格；沒給來源（undefined）＝沿用原來的，給了空字串才是清掉
+//    (e) 手機：清除鈕擋 mousedown、不包在 label 裡；兩格 textarea 字級走 --ctl-font、不自動大寫／校正；面板內 標題 → 來源 → 清單
+check('㊳ 來源欄：每一筆各自一份、加入時帶入、自己一格存', (w) => {
+  const L = w.Lib, miss = [];
+  if (typeof L.normalizeSource !== 'function') return 'FAIL: lib 沒有 normalizeSource';
+  const dflt = { inputMethod: 'ISO15919', transliteration: 'IAST', ignoreSpacesAndHyphens: true };
+  if (L.normalizeSource('  大正藏 T20\r\n  p.107a\r\n') !== '大正藏 T20\n  p.107a' || L.normalizeSource(null) !== '' || L.normalizeSource(7) !== '' || L.normalizeSource(undefined) !== '') miss.push('normalizeSource');
+  const r1 = L.makeRecord('t', 'na mo', dflt, 'S', 'r1', 5, ' T20 No.1060 \n');
+  if (!r1 || r1.source !== 'T20 No.1060') miss.push('makeRecord 沒帶來源：' + JSON.stringify(r1 && r1.source));
+  const r0 = L.makeRecord('t', 'na mo', dflt, 'S', 'r0', 4);
+  if (!r0 || r0.source !== '') miss.push('沒給來源時不是空字串');
+  if (L.makeRecord('t', '  ', dflt, 'S', 'rx', 1, '有來源') !== null) miss.push('只有來源、沒有記法也記成一筆');
+  const exp = L.buildExport([r1, { title: 'old', input: 'a', options: dflt, savedAt: 'S' }], () => ({ siddham: 's', tibetan: 't', latin: 'l', ascii: 'a', codepoints: 'c' }), 'T');
+  if (exp.records[0].source !== 'T20 No.1060') miss.push('JSON 輸出沒帶來源');
+  if (exp.records[1].source !== '') miss.push('舊紀錄（沒有這一欄）輸出的來源不是空字串：' + JSON.stringify(exp.records[1].source));
+  // 編輯：沒給＝沿用；給空字串＝清掉；只改來源也是更動
+  const e0 = L.editRecord(r1, 't', 'na mo', dflt, 'NEW');
+  if (e0 !== r1) miss.push('沒給來源時被當成更動（應沿用原來的）');
+  const e1 = L.editRecord(r1, 't', 'na mo', dflt, 'NEW', 'T20 No.1060\np.107a');
+  if (!e1 || e1 === r1 || e1.source !== 'T20 No.1060\np.107a' || e1.id !== 'r1' || e1.order !== 5) miss.push('只改來源不算更動，或身分變了');
+  const e2 = L.editRecord(r1, 't', 'na mo', dflt, 'NEW', '');
+  if (!e2 || e2 === r1 || e2.source !== '') miss.push('清掉來源不算更動');
+  if (L.editRecord(r1, 't', 'na mo', dflt, 'NEW', '  T20 No.1060 ') !== r1) miss.push('只差頭尾空白也被當成更動');
+  if (L.editRecord(r0, 't', 'na mo', dflt, 'NEW', '') !== r0) miss.push('空的改成空的被當成更動');
+
+  // 控制器：加入／取代帶入面板上那一格；載回跟著那一筆；自己一格
+  if (!/keep \? keep\.id : newId\(\), keep \? keep\.order : 0, \$recSource\.value, /.test(fnBody(w.js, 'currentRecord'))) miss.push('加入時沒有帶入來源欄的值');
+  const act = fnBody(w.js, 'recAction');
+  if (!/\$recSource\.value = it\.source;[^\n]*\n\s*state\.rec\.source = it\.source;/.test(act)) miss.push('載回某一筆時來源沒有跟著回來');
+  const k = ['REC_KEY', 'REC_TITLE_KEY', 'REC_SOURCE_KEY'].map((n) => (w.js.match(new RegExp("var " + n + " = '([^']+)'")) || [])[1]);
+  if (k.some((x) => !x) || new Set(k).size !== 3) miss.push('清單／標題／來源不是三格分開存（' + k.join('／') + '）');
+  const cs = fnBody(w.js, 'clearSource'), ss = fnBody(w.js, 'saveSource');
+  if (!cs || !ss) return 'FAIL: 找不到 clearSource／saveSource' + (miss.length ? '；' + miss.join('、') : '');
+  if (/\$recTitle\b|state\.rec\.title|saveTitle|pushTitle|state\.rec\.items/.test(cs)) miss.push('清除來源動到了標題或清單');
+  if (!/localStorage\.setItem\(REC_SOURCE_KEY, state\.rec\.source\)/.test(ss)) miss.push('saveSource 寫的不是來源那一格');
+  if (!/Lib\.editRecord\(state\.edit\.orig, \$editTitle\.value, \$editInput\.value, readEditOptions\(\), savedAt, \$editSource\.value, /.test(w.js)) miss.push('編輯表單沒有把來源交給 editRecord');
+  if (!/\$editSource\.value = it\.source;/.test(fnBody(w.js, 'startEdit'))) miss.push('開始編輯時沒有帶出那一筆的來源');
+  if (!/if \(r\.source\) main\.appendChild\(node\('span', 'rec-src'/.test(w.js)) miss.push('清單上看不到來源');
+  if (!/setSource\(state\.rec\.source\)/.test(fnBody(w.js, 'pushSource'))) miss.push('來源欄的值沒有同步');
+  if (!/sourceClear\.addEventListener\('mousedown',[^\n]*preventDefault\(\)/.test(w.js)) miss.push('來源的清除鈕沒擋 mousedown');
+
+  // 畫面
+  const sheet = (w.html.match(/<div id="records-modal"[\s\S]*?\n  <\/div>\n/) || [''])[0];
+  const t = sheet.indexOf('id="rec-title"'), so = sheet.indexOf('id="rec-source"'), l = sheet.indexOf('id="rec-list"');
+  if (!(t > 0 && t < so && so < l)) miss.push('面板內的順序不是 標題 → 來源 → 清單');
+  const ci = sheet.indexOf('id="rec-source-clear"');
+  if (ci < 0) miss.push('來源欄旁沒有清除鈕');
+  else if (sheet.lastIndexOf('<label', ci) > sheet.lastIndexOf('</label>', ci)) miss.push('來源的清除鈕包在 <label> 裡');
+  for (const id of ['rec-source', 'rec-edit-source']) {
+    const ta = (sheet.match(new RegExp('<textarea id="' + id + '"[^>]*>')) || [''])[0];
+    if (!ta) { miss.push('找不到 #' + id); continue; }
+    const lack = ['class="rec-source-input"', 'autocapitalize="off"', 'autocorrect="off"', 'spellcheck="false"'].filter((a) => ta.indexOf(a) < 0);
+    if (lack.length) miss.push('#' + id + ' 少了 ' + lack.join(' '));
+  }
+  const es = sheet.indexOf('id="rec-edit-source"'), ee = sheet.indexOf('id="rec-edit"'), tt = sheet.indexOf('id="rec-title"');
+  if (!(ee > 0 && ee < es && es < tt)) miss.push('編輯表單裡沒有來源欄');
+  if (!/textarea\.rec-source-input\s*\{[^}]*font-size:\s*var\(--ctl-font\)/.test(w.css)) miss.push('來源欄沒用 --ctl-font');
+  if (!/textarea\.rec-source-input\s*\{[^}]*min-height:\s*46px/.test(w.css)) miss.push('來源欄沒有 min-height（面板沒開時量到 0 會塌掉）');
+  return miss.length ? 'FAIL: ' + miss.join('、') : true;
+});
+
+// ㊴ 類型欄〔owner 2026-10-13：「再增加一個 field，用來紀錄資料的類型，例如：真言 / 種子字 / ...」〕。
+//    (a) 每一筆各自一份 `type`：**自由文字**〔owner 選的；另一案是固定選單〕、單行、可以是空的；JSON 輸出帶這一欄；舊紀錄＝空字串
+//    (b) 快選鈕上的詞＝預設的（真言、種子字）在前 ＋ 清單裡用過的（依第一次出現的順序），不重複、不含空的——期望值寫死在這裡
+//    (c) 面板上標題欄底下有一格：加入／取代時帶入；載回時跟著那一筆回來；自己一格存（碰不到清單——那一半在儲存區那一條）
+//    (d) 編輯表單裡也有一格＋一排快選鈕；那一排只動表單，不可以去改面板上那一格（那會在按儲存之前就把面板的值換掉）
+//    (e) 手機：快選鈕與清除鈕擋 mousedown；清除鈕不包在 label 裡；面板內 標題 → 類型 → 來源 → 清單
+check('㊴ 類型欄：自由文字＋快選鈕、加入時帶入、自己一格存', (w) => {
+  const L = w.Lib, miss = [];
+  if (typeof L.normalizeType !== 'function' || typeof L.typeChoices !== 'function') return 'FAIL: lib 沒有 normalizeType／typeChoices';
+  const dflt = { inputMethod: 'ISO15919', transliteration: 'IAST', ignoreSpacesAndHyphens: true };
+  if (L.normalizeType('  種子 \n 字 ') !== '種子 字' || L.normalizeType(null) !== '' || L.normalizeType(3) !== '') miss.push('normalizeType');
+  const used = [{ type: '陀羅尼' }, { type: ' 真言 ' }, { type: '' }, { type: '種子字' }, null, { type: '陀羅尼' }, { type: '心咒' }, {}];
+  const snap = JSON.stringify(used);
+  const ch = L.typeChoices(used).join('|');
+  if (ch !== '真言|種子字|陀羅尼|心咒') miss.push('快選鈕的詞 = ' + ch + '（應為 真言|種子字|陀羅尼|心咒）');
+  if (L.typeChoices(null).join('|') !== '真言|種子字' || L.typeChoices([]).join('|') !== '真言|種子字') miss.push('清單是空的時候不是只有預設的兩個');
+  if (JSON.stringify(used) !== snap) miss.push('typeChoices 改了傳進來的清單');
+  const r1 = L.makeRecord('t', 'hrii.h', dflt, 'S', 'r1', 5, 'T18', '  種子字 ');
+  if (!r1 || r1.type !== '種子字' || r1.source !== 'T18') miss.push('makeRecord 沒帶類型：' + JSON.stringify(r1 && [r1.type, r1.source]));
+  const r0 = L.makeRecord('t', 'hrii.h', dflt, 'S', 'r0', 4);
+  if (!r0 || r0.type !== '') miss.push('沒給類型時不是空字串');
+  const exp = L.buildExport([r1, { title: 'old', input: 'a', options: dflt, savedAt: 'S' }], () => ({ siddham: 's', tibetan: 't', latin: 'l', ascii: 'a', codepoints: 'c' }), 'T');
+  if (exp.records[0].type !== '種子字') miss.push('JSON 輸出沒帶類型');
+  if (exp.records[1].type !== '') miss.push('舊紀錄（沒有這一欄）輸出的類型不是空字串：' + JSON.stringify(exp.records[1].type));
+  if (L.editRecord(r1, 't', 'hrii.h', dflt, 'NEW') !== r1) miss.push('沒給類型時被當成更動（應沿用原來的）');
+  const e1 = L.editRecord(r1, 't', 'hrii.h', dflt, 'NEW', undefined, '真言');
+  if (!e1 || e1 === r1 || e1.type !== '真言' || e1.source !== 'T18' || e1.id !== 'r1' || e1.order !== 5) miss.push('只改類型不算更動，或來源／身分跟著變了');
+  const e2 = L.editRecord(r1, 't', 'hrii.h', dflt, 'NEW', undefined, '');
+  if (!e2 || e2 === r1 || e2.type !== '') miss.push('清掉類型不算更動');
+  if (L.editRecord(r1, 't', 'hrii.h', dflt, 'NEW', 'T18', ' 種子字  ') !== r1) miss.push('只差頭尾空白也被當成更動');
+
+  // 控制器
+  if (!/keep \? keep\.order : 0, \$recSource\.value, \$recType\.value\);/.test(fnBody(w.js, 'currentRecord'))) miss.push('加入時沒有帶入類型欄的值');
+  if (!/\$recType\.value = it\.type;[^\n]*\n\s*state\.rec\.type = it\.type;/.test(fnBody(w.js, 'recAction'))) miss.push('載回某一筆時類型沒有跟著回來');
+  const k = ['REC_KEY', 'REC_TITLE_KEY', 'REC_SOURCE_KEY', 'REC_TYPE_KEY'].map((n) => (w.js.match(new RegExp("var " + n + " = '([^']+)'")) || [])[1]);
+  if (k.some((x) => !x) || new Set(k).size !== 4) miss.push('清單／標題／來源／類型不是四格分開存（' + k.join('／') + '）');
+  const sp = fnBody(w.js, 'setPanelType'), ct = fnBody(w.js, 'clearType'), st = fnBody(w.js, 'saveType'), rc = fnBody(w.js, 'renderTypeChips');
+  if (!sp || !ct || !st || !rc) return 'FAIL: 找不到 setPanelType／clearType／saveType／renderTypeChips' + (miss.length ? '；' + miss.join('、') : '');
+  if (/\$recTitle\b|\$recSource\b|state\.rec\.(title|source|items)|saveTitle|saveSource/.test(sp + ct)) miss.push('改類型欄動到了標題、來源或清單');
+  if (!/localStorage\.setItem\(REC_TYPE_KEY, state\.rec\.type\)/.test(st)) miss.push('saveType 寫的不是類型那一格');
+  if (!/Lib\.typeChoices\(state\.rec\.items\)/.test(rc)) miss.push('快選鈕的詞不是由 lib 給的');
+  if (!/readEditOptions\(\), savedAt, \$editSource\.value, \$editType\.value\)/.test(w.js)) miss.push('編輯表單沒有把類型交給 editRecord');
+  if (!/\$editType\.value = it\.type;/.test(fnBody(w.js, 'startEdit'))) miss.push('開始編輯時沒有帶出那一筆的類型');
+  if (!/if \(r\.type\) head\.appendChild\(node\('span', 'rec-type', r\.type\)\);/.test(w.js)) miss.push('清單上看不到類型');
+  if (!/setType\(state\.rec\.type\)/.test(fnBody(w.js, 'pushType'))) miss.push('類型欄的值沒有同步');
+  if (!/addEventListener\('mousedown', function \(e\) \{\s*if \(e\.target\.closest\('\.rec-chip'\)\) e\.preventDefault\(\);/.test(w.js)) miss.push('快選鈕沒擋 mousedown');
+  if (!/typeClear\.addEventListener\('mousedown',[^\n]*preventDefault\(\)/.test(w.js)) miss.push('類型的清除鈕沒擋 mousedown');
+  if (!/=== 'rec-edit-type'\) \{ \$editType\.value = v; renderTypeChips\(\); \}\s*else \{ \$recType\.value = v; setPanelType\(v\); \}/.test(w.js)) miss.push('編輯表單的快選鈕不是只動表單那一格');
+
+  // 畫面
+  const sheet = (w.html.match(/<div id="records-modal"[\s\S]*?\n  <\/div>\n/) || [''])[0];
+  const t = sheet.indexOf('id="rec-title"'), ty = sheet.indexOf('id="rec-type"'), so = sheet.indexOf('id="rec-source"'), l = sheet.indexOf('id="rec-list"');
+  if (!(t > 0 && t < ty && ty < so && so < l)) miss.push('面板內的順序不是 標題 → 類型 → 來源 → 清單');
+  const ci = sheet.indexOf('id="rec-type-clear"');
+  if (ci < 0) miss.push('類型欄旁沒有清除鈕');
+  else if (sheet.lastIndexOf('<label', ci) > sheet.lastIndexOf('</label>', ci)) miss.push('類型的清除鈕包在 <label> 裡');
+  for (const id of ['rec-type', 'rec-edit-type']) {
+    const tag = (sheet.match(new RegExp('<input type="text" id="' + id + '"[^>]*>')) || [''])[0];
+    if (!tag) { miss.push('找不到 #' + id); continue; }
+    const lack = ['class="rec-title"', 'autocorrect="off"', 'spellcheck="false"'].filter((a) => tag.indexOf(a) < 0);
+    if (lack.length) miss.push('#' + id + ' 少了 ' + lack.join(' ') + '（rec-title＝字級走 --ctl-font）');
+    if (sheet.indexOf('<div class="rec-chips" data-for="' + id + '"></div>') < sheet.indexOf('id="' + id + '"')) miss.push('#' + id + ' 底下沒有快選鈕那一排');
+  }
+  const ee = sheet.indexOf('id="rec-edit"'), et = sheet.indexOf('id="rec-edit-type"');
+  if (!(ee > 0 && ee < et && et < t)) miss.push('編輯表單裡沒有類型欄');
   return miss.length ? 'FAIL: ' + miss.join('、') : true;
 });
 
@@ -1025,7 +1182,63 @@ const MUTANTS = [
   ['㊲', '記法欄開著自動校正', (w) => { w.html = w.html.replace(/(<textarea id="rec-edit-input"[^>]*?)autocorrect="off" /, '$1'); }],
   ['㊲', '記法欄字級寫死 16px', (w) => { w.css = w.css.replace(/(textarea\.rec-edit-input\s*\{[^}]*font-size:\s*)var\(--ctl-font\)/, '$116px'); }],
   ['㊲', '清單上沒有編輯鈕', (w) => { w.js = w.js.replace("      li.appendChild(recButton('edit', i, 'edit', 'rec.edit', false));\n", ''); }],
-  ['⑭', '編輯的文案少一語', (w) => { delete w.locales.ja['rec.toast.confirmDiscard']; }]
+  ['⑭', '編輯的文案少一語', (w) => { delete w.locales.ja['rec.toast.confirmDiscard']; }],
+  ['㊳', '來源被丟掉（makeRecord 不收）', (w) => { const f = w.Lib.makeRecord; w.Lib.makeRecord = (t, i, o, s, id, ord) => f(t, i, o, s, id, ord); }],
+  ['㊳', '來源的換行被壓成一行', (w) => { const f = w.Lib.normalizeSource; w.Lib.normalizeSource = (s) => f(s).replace(/\s+/g, ' '); }],
+  ['㊳', 'JSON 輸出不帶來源', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (...a) => { const e = f(...a); e.records.forEach((r) => { delete r.source; }); return e; }; }],
+  ['㊳', '舊紀錄的來源輸出成 undefined', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (items, c, t) => { const e = f(items, c, t); e.records.forEach((r, i) => { r.source = items[i].source; }); return e; }; }],
+  ['㊳', '編輯時沒給來源就清掉它', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, t, i, op, s, src) => f(o, t, i, op, s, src === undefined ? '' : src); }],
+  ['㊳', '只改來源被當成沒有更動', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, t, i, op, s, src) => { const r = f(o, t, i, op, s, src); return r && o && r !== o && r.title === o.title && r.input === o.input && JSON.stringify(r.options) === JSON.stringify(o.options) ? o : r; }; }],
+  ['㊳', '加入時不帶來源欄的值', (w) => { w.js = w.js.replace('keep ? keep.order : 0, $recSource.value, ', 'keep ? keep.order : 0, undefined, '); }],
+  ['㊳', '載回時來源沒有跟著回來', (w) => { w.js = w.js.replace("      $recSource.value = it.source;   // 來源跟著那一筆回來（之後按取代，來源才不會被面板上別的值換掉）\n      state.rec.source = it.source;\n", ''); }],
+  ['㊳', '來源與標題存在同一格', (w) => { w.js = w.js.replace("-rec-source';   // 來源欄現在的值", "-rec-title';   // 來源欄現在的值"); }],
+  ['㊳', '清除來源順手清了標題', (w) => { w.js = w.js.replace("    state.rec.source = '';\n    grow($recSource);", "    state.rec.source = '';\n    state.rec.title = '';\n    grow($recSource);"); }],
+  ['㊳', '編輯表單不把來源交出去', (w) => { w.js = w.js.replace('readEditOptions(), savedAt, $editSource.value, ', 'readEditOptions(), savedAt, undefined, '); }],
+  ['㊳', '開始編輯時來源欄留著上一筆的', (w) => { w.js = w.js.replace("    $editSource.value = it.source;\n", ''); }],
+  ['㊳', '清單上不顯示來源', (w) => { w.js = w.js.replace("      if (r.source) main.appendChild(node('span', 'rec-src'", "      if (false) main.appendChild(node('span', 'rec-src'"); }],
+  ['㊳', '來源的清除鈕不擋 mousedown', (w) => { w.js = w.js.replace("sourceClear.addEventListener('mousedown'", "sourceClear.addEventListener('pointerup'"); }],
+  ['㊳', '來源欄排到清單下面', (w) => { w.html = w.html.replace('id="rec-source"', 'id="__s__"').replace('id="rec-json"', 'id="rec-source"').replace('id="__s__"', 'id="rec-json"'); }],
+  ['㊳', '來源的清除鈕包進 <label>', (w) => { w.html = w.html.replace('<div class="rec-title-row rec-source-row">', '<label class="rec-title-row rec-source-row">').replace(/(id="rec-source-clear"[\s\S]*?<\/a>\n\s*)<\/div>/, '$1</label>'); }],
+  ['㊳', '來源欄開著自動校正', (w) => { w.html = w.html.replace(/(<textarea id="rec-source"[\s\S]*?)autocorrect="off" /, '$1'); }],
+  ['㊳', '來源欄字級寫死 16px', (w) => { w.css = w.css.replace(/(textarea\.rec-source-input\s*\{[^}]*font-size:\s*)var\(--ctl-font\)/, '$116px'); }],
+  ['㊳', '編輯表單沒有來源欄', (w) => { w.html = w.html.replace(/        <div class="opt-field">\n          <label class="opt-label" for="rec-edit-source"[\s\S]*?<\/div>\n/, ''); }],
+  ['㉝', '打來源時整份清單重寫', (w) => { w.js = w.js.replace("      grow($recSource);\n      saveSourceSoon();", "      grow($recSource);\n      saveItems();\n      saveSourceSoon();"); }],
+  ['㉝', '清除來源又去寫清單', (w) => { w.js = w.js.replace("    grow($recSource);\n    saveSource();\n    pushSource();\n    setIconDone(trigger);", "    grow($recSource);\n    saveItems();\n    saveSource();\n    pushSource();\n    setIconDone(trigger);"); }],
+  ['㉞', '同步寫入時漏了來源', (w) => { w.remote = w.remote.replace("source: rec.source || '', input:", 'input:'); }],
+  ['㉞', '同步讀回時漏了來源', (w) => { w.remote = w.remote.replace('source: x.source, input:', 'input:'); }],
+  ['㉟', '備份不比來源（只改來源被當成沒變）', (w) => { w.backup = w.backup.replace('r.source || "", r.input, r.options, r.order])', 'r.input, r.options, r.order])'); }],
+  ['㉛', '來源欄有焦點時也更新鍵盤基準', (w) => { w.js = w.js.replace(' || a === $recSource', ''); }],
+  ['㉚', '讀回的來源不驗證（不是字串也收）', (w) => { const f = w.Lib.normalizeStore; w.Lib.normalizeStore = (s) => { const o = f(s); ((s && s.items) || []).forEach((r, i) => { if (o.items[i] && r && 'source' in r) o.items[i].source = r.source; }); return o; }; }],
+  ['⑭', '來源的文案少一語', (w) => { delete w.locales.en['rec.sourceLine']; }],
+  ['㊴', '類型被丟掉（makeRecord 不收）', (w) => { const f = w.Lib.makeRecord; w.Lib.makeRecord = (t, i, o, s, id, ord, src) => f(t, i, o, s, id, ord, src); }],
+  ['㊴', '用過的類型排到預設的前面', (w) => { const f = w.Lib.typeChoices; w.Lib.typeChoices = (items) => { const a = f(items); return a.slice(2).concat(a.slice(0, 2)); }; }],
+  ['㊴', '快選鈕的詞重複', (w) => { w.Lib.typeChoices = (items) => ['真言', '種子字'].concat((items || []).filter(Boolean).map((x) => w.Lib.normalizeType(x.type)).filter(Boolean)); }],
+  ['㊴', '預設的詞少一個', (w) => { const f = w.Lib.typeChoices; w.Lib.typeChoices = (items) => f(items).filter((t) => t !== '種子字'); }],
+  ['㊴', '類型留著換行（不是單行）', (w) => { w.Lib.normalizeType = (t) => (typeof t === 'string' ? t.trim() : ''); }],
+  ['㊴', 'JSON 輸出不帶類型', (w) => { const f = w.Lib.buildExport; w.Lib.buildExport = (...a) => { const e = f(...a); e.records.forEach((r) => { delete r.type; }); return e; }; }],
+  ['㊴', '編輯時沒給類型就清掉它', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, t, i, op, s, src, ty) => f(o, t, i, op, s, src, ty === undefined ? '' : ty); }],
+  ['㊴', '只改類型被當成沒有更動', (w) => { const f = w.Lib.editRecord; w.Lib.editRecord = (o, t, i, op, s, src, ty) => { const r = f(o, t, i, op, s, src, ty); return r && o && r !== o && r.title === o.title && r.input === o.input && r.source === o.source && JSON.stringify(r.options) === JSON.stringify(o.options) ? o : r; }; }],
+  ['㊴', '加入時不帶類型欄的值', (w) => { w.js = w.js.replace('$recSource.value, $recType.value);', '$recSource.value);'); }],
+  ['㊴', '載回時類型沒有跟著回來', (w) => { w.js = w.js.replace("      $recType.value = it.type;       // 類型同上\n      state.rec.type = it.type;\n", ''); }],
+  ['㊴', '類型與來源存在同一格', (w) => { w.js = w.js.replace("-rec-type';   // 類型欄現在的值", "-rec-source';   // 類型欄現在的值"); }],
+  ['㊴', '編輯表單的快選鈕改到面板上那一格', (w) => { w.js = w.js.replace("{ $editType.value = v; renderTypeChips(); }", "{ $recType.value = v; setPanelType(v); }"); }],
+  ['㊴', '快選鈕不擋 mousedown', (w) => { w.js = w.js.replace("      if (e.target.closest('.rec-chip')) e.preventDefault();\n", ''); }],
+  ['㊴', '編輯表單不把類型交出去', (w) => { w.js = w.js.replace('savedAt, $editSource.value, $editType.value);', 'savedAt, $editSource.value);'); }],
+  ['㊴', '開始編輯時類型欄留著上一筆的', (w) => { w.js = w.js.replace("    $editType.value = it.type;\n", ''); }],
+  ['㊴', '清單上不顯示類型', (w) => { w.js = w.js.replace("      if (r.type) head.appendChild(node('span', 'rec-type', r.type));\n", ''); }],
+  ['㊴', '快選鈕的詞寫死在控制器', (w) => { w.js = w.js.replace('var choices = Lib.typeChoices(state.rec.items);', "var choices = ['真言', '種子字'];"); }],
+  ['㊴', '類型欄排到來源下面', (w) => { w.html = w.html.replace('id="rec-type"', 'id="__t__"').replace('id="rec-source"', 'id="rec-type"').replace('id="__t__"', 'id="rec-source"'); }],
+  ['㊴', '類型的清除鈕包進 <label>', (w) => { w.html = w.html.replace('<div class="rec-title-row rec-type-row">', '<label class="rec-title-row rec-type-row">').replace(/(id="rec-type-clear"[\s\S]*?<\/a>\n\s*)<\/div>/, '$1</label>'); }],
+  ['㊴', '面板上沒有快選鈕那一排', (w) => { w.html = w.html.replace('        <div class="rec-chips" data-for="rec-type"></div>\n', ''); }],
+  ['㊴', '編輯表單沒有類型欄', (w) => { w.html = w.html.replace(/        <div class="opt-field">\n          <label class="opt-label" for="rec-edit-type"[\s\S]*?<\/div>\n        <\/div>\n/, ''); }],
+  ['㊴', '類型欄不走 --ctl-font（拿掉 rec-title）', (w) => { w.html = w.html.replace('<input type="text" id="rec-edit-type" class="rec-title"', '<input type="text" id="rec-edit-type" class="rec-type-input"'); }],
+  ['㉝', '點快選鈕時整份清單重寫', (w) => { w.js = w.js.replace("    state.rec.type = Lib.normalizeType(v);\n", "    state.rec.type = Lib.normalizeType(v);\n    saveItems();\n"); }],
+  ['㉞', '同步寫入時漏了類型', (w) => { w.remote = w.remote.replace("type: rec.type || '', source:", 'source:'); }],
+  ['㉞', '同步讀回時漏了類型', (w) => { w.remote = w.remote.replace('type: x.type, source:', 'source:'); }],
+  ['㉟', '備份不比類型（只改類型被當成沒變）', (w) => { w.backup = w.backup.replace('[r.title, r.type || "", r.source', '[r.title, r.source'); }],
+  ['㉛', '類型欄有焦點時也更新鍵盤基準', (w) => { w.js = w.js.replace(' || a === $recType', ''); }],
+  ['㉚', '讀回的類型不驗證（不是字串也收）', (w) => { const f = w.Lib.normalizeStore; w.Lib.normalizeStore = (s) => { const o = f(s); ((s && s.items) || []).forEach((r, i) => { if (o.items[i] && r && 'type' in r) o.items[i].type = r.type; }); return o; }; }],
+  ['⑭', '類型的文案少一語', (w) => { delete w.locales.ja['rec.typeLabel']; }]
 ];
 
 async function selftest() {

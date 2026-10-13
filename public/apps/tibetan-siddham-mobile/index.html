@@ -172,6 +172,11 @@
           <input type="text" id="rec-edit-title" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false" />
         </div>
         <div class="opt-field">
+          <label class="opt-label" for="rec-edit-type" data-i18n="rec.editType">類型</label>
+          <input type="text" id="rec-edit-type" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false" />
+          <div class="rec-chips" data-for="rec-edit-type"></div>
+        </div>
+        <div class="opt-field">
           <label class="opt-label" for="rec-edit-input" data-i18n="rec.editInput">記法</label>
           <textarea id="rec-edit-input" class="rec-edit-input mono" rows="2"
             autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
@@ -180,6 +185,11 @@
           <span class="opt-label" data-i18n="rec.editPreview">轉換結果</span>
           <div id="rec-edit-out" class="rec-edit-out" aria-live="polite"></div>
           <div id="rec-edit-latin" class="rec-edit-latin"></div>
+        </div>
+        <div class="opt-field">
+          <label class="opt-label" for="rec-edit-source" data-i18n="rec.editSource">來源</label>
+          <textarea id="rec-edit-source" class="rec-source-input" rows="2"
+            autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
         </div>
         <label class="opt-field">
           <span class="opt-label" data-i18n="opt.inputMethod">輸入法</span>
@@ -210,6 +220,33 @@
           <input type="text" id="rec-title" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false"
             data-i18n-placeholder="rec.titlePlaceholder" placeholder="例如：百字明" />
           <a href="#!" id="rec-title-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearTitle" title="清除標題">
+            <i class="material-icons">clear</i>
+          </a>
+        </div>
+      </div>
+      <!-- 類型〔owner 2026-10-13〕：這一筆是什麼（真言／種子字／…）。自由文字＋快選鈕——鈕由控制器的 renderTypeChips 填
+           （預設的兩個＋清單裡用過的），點一顆＝填進上面那一格。行為照標題欄：加入一筆時帶入現在的值。清除鈕不可以包在 label 裡。 -->
+      <div class="opt-field">
+        <label class="opt-label" for="rec-type" data-i18n="rec.typeLabel">類型（可留空；加入時會帶進那一筆）</label>
+        <div class="rec-title-row rec-type-row">
+          <input type="text" id="rec-type" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false"
+            data-i18n-placeholder="rec.typePlaceholder" placeholder="例如：真言" />
+          <a href="#!" id="rec-type-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearType" title="清除類型">
+            <i class="material-icons">clear</i>
+          </a>
+        </div>
+        <div class="rec-chips" data-for="rec-type"></div>
+      </div>
+      <!-- 來源〔owner 2026-10-13〕：這一筆資料出自哪裡（經號、頁碼、網址…），多行。行為照標題欄：加入一筆時帶入現在的值，
+           所以同一部咒語分好幾段記只要填一次；每一筆之後仍可在編輯表單裡各自改。
+           ⚠️ 清除鈕同樣不可以包在 label 裡；textarea 是裸的（高度由控制器的 grow() 給）、字級走 --ctl-font。 -->
+      <div class="opt-field">
+        <label class="opt-label" for="rec-source" data-i18n="rec.sourceLabel">來源（可留空；加入時會帶進那一筆）</label>
+        <div class="rec-title-row rec-source-row">
+          <textarea id="rec-source" class="rec-source-input" rows="1"
+            autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"
+            data-i18n-placeholder="rec.sourcePlaceholder" placeholder="例如：大正藏 T20 No.1060"></textarea>
+          <a href="#!" id="rec-source-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearSource" title="清除來源">
             <i class="material-icons">clear</i>
           </a>
         </div>

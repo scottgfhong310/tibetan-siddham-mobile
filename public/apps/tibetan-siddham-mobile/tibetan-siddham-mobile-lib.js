@@ -14,22 +14,25 @@
  *   normalizeOptions(o)        → 三個選項的白名單版本（從 localStorage 讀回來的不可信）
  *   normalizeDraft(d)          → { input, options } —— 草稿同上
  *   normalizeTitle(t)          → 標題的單行版本（**可以是空的、可以重複**）
- *   makeRecord(t, i, o, iso, id, order) → 一筆紀錄 `{ title, input, options, savedAt, id, order }`；input 是空的回 null
+ *   normalizeType(t)           → 類型的單行版本（**自由文字、可以是空的**）
+ *   TYPE_PRESETS／typeChoices(items) → 快選鈕上的詞：預設的（真言、種子字）＋清單裡用過的，不重複
+ *   normalizeSource(s)         → 來源的版本：換行統一成 \n、去頭尾空白（**多行、可以是空的**）
+ *   makeRecord(t, i, o, iso, id, order, source, type) → 一筆紀錄 `{ title, type, source, input, options, savedAt, id, order }`；input 是空的回 null
  *   normalizeStore(s)          → { title, items } —— 紀錄清單（從 localStorage 讀回來的不可信）
  *   storeDrift(last, now)      → 'same' | 'changed' | 'lost' —— 儲存區裡的清單與這個畫面上次看到的比起來怎麼了
  *   nextOrder(items, now)      → 新的一筆的排序值（一定排在現有每一筆之後）
  *   mergeRemote(remote, put, del) → 遠端清單 ⊕ 這個畫面還沒被確認的寫入，依 order 排（Artifacts 版的同步用）
  *   addRecord／replaceRecord／removeRecord(items, …) → 新陣列（不改輸入）
  *   indexOfId(items, id)       → 那一筆現在在第幾格（找不到 -1）
- *   editRecord(orig, t, i, o, iso) → 編輯後的那一筆（id／order 沿用）；沒有更動回 orig 本身、input 清空回 null
+ *   editRecord(orig, t, i, o, iso, source, type) → 編輯後的那一筆（id／order 沿用）；沒有更動回 orig 本身、input 清空回 null；source／type 沒給＝沿用原來的
  *   buildExport(items, convert, iso) → JSON 輸出的那個物件（輸出是匯出當下**算出來的**，不落地）
  *   exportFilename(date)       → `tibetan-siddham-mobile-yyyyMMddHHmmss.json`
  *
  * 資料格式：assist `{ categories: [{ id, carrier?, entries: [{ code, char, label?, note? }] }] }`（tibetan-siddham 的輔助輸入面板那一份）；
  *           草稿 `{ input: string, options: { inputMethod, transliteration, ignoreSpacesAndHyphens } }`；
- *           紀錄清單 `{ items: [{ title, input, options, savedAt, id, order }] }`（標題欄的值另存一格，見控制器）；
+ *           紀錄清單 `{ items: [{ title, type, source, input, options, savedAt, id, order }] }`（標題欄的值另存一格，見控制器）；
  *           `id`＝這一筆的身分（Artifacts 版一筆一份文件，文件名就是它）、`order`＝排序值；兩者都**不進 JSON 輸出**。
- *           JSON 輸出 `{ app, exportedAt, count, records: [{ seq, part, title, options, input, output, savedAt }] }`，
+ *           JSON 輸出 `{ app, exportedAt, count, records: [{ seq, part, title, type, source, options, input, output, savedAt }] }`，
  *           `output` ＝ `{ tibetan, latin, codepoints }`（**沒有悉曇**，見下面 buildExport 的說明）。
  * 後端 API：無（零後端，DATABASE_GUIDELINES §0 的第 0 層）。
  */
@@ -157,14 +160,41 @@
     return typeof t === 'string' ? t.replace(/\s+/g, ' ').trim() : '';
   }
 
+  /* 類型〔owner 2026-10-13〕：這一筆是什麼——「真言／種子字／…」。**自由文字**〔owner 選的；另一案是固定選單〕：
+   * 詞彙由使用的人用出來，不必先定清單、之後加新的類型不必改程式。單行，正規化同標題；空的是合法的（舊紀錄都沒有這一欄）。
+   * 快選鈕上的詞＝預設的 ＋ 清單裡已經用過的（依第一次出現的順序）——打過一次的類型下一次用點的，不必再打，也比較不會打出兩種寫法。
+   * ⚠️ 預設的詞是**資料的值**（會原樣存進紀錄與 JSON），不是介面文案——不跟著語言切換。 */
+  function normalizeType(t) { return normalizeTitle(t); }
+  var TYPE_PRESETS = ['真言', '種子字'];
+  function typeChoices(items) {
+    var seen = {}, out = [];
+    function add(t) {
+      t = normalizeType(t);
+      if (!t || seen['t:' + t]) return;
+      seen['t:' + t] = true;
+      out.push(t);
+    }
+    TYPE_PRESETS.forEach(add);
+    (Array.isArray(items) ? items : []).forEach(function (it) { if (it) add(it.type); });
+    return out;
+  }
+
+  /* 來源〔owner 2026-10-13〕：這一筆資料出自哪裡（經號、頁碼、網址…），多行的自由文字。
+   * 換行統一成 \n、去掉頭尾空白；不是字串當成空的。**空的是合法的**（舊紀錄都沒有這一欄）——三值語意裡它一律落在 ''。 */
+  function normalizeSource(s) {
+    return typeof s === 'string' ? s.replace(/\r\n?/g, '\n').trim() : '';
+  }
+
   // input 全是空白＝沒有東西可記 ⇒ null（呼叫端據此講「沒有可加入的內容」，不加一筆空的）
   // savedAt＝這一筆內容記下的那一刻（ISO 字串，由呼叫端給）；取代一筆時是取代的那一刻，不是它最初加入的時間
   // id／order：沒給或不合格時是 ''／0（由控制器在加入的那一刻補上）。id 只收文件路徑容得下的字元。
   var ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-  function makeRecord(title, input, options, savedAt, id, order) {
+  function makeRecord(title, input, options, savedAt, id, order, source, type) {
     if (typeof input !== 'string' || !input.trim()) return null;
     return {
       title: normalizeTitle(title),
+      type: normalizeType(type),
+      source: normalizeSource(source),
       input: input,
       options: normalizeOptions(options),
       savedAt: typeof savedAt === 'string' ? savedAt : '',
@@ -178,7 +208,7 @@
     s = (s && typeof s === 'object') ? s : {};
     var items = [];
     (Array.isArray(s.items) ? s.items : []).forEach(function (r) {
-      var rec = r && typeof r === 'object' ? makeRecord(r.title, r.input, r.options, r.savedAt, r.id, r.order) : null;
+      var rec = r && typeof r === 'object' ? makeRecord(r.title, r.input, r.options, r.savedAt, r.id, r.order, r.source, r.type) : null;
       if (rec) items.push(rec);
     });
     return { title: normalizeTitle(s.title), items: items };
@@ -252,11 +282,14 @@
    *   沒有任何更動 ⇒ 回**原來那個物件**（呼叫端據此不寫入——沒改的那一筆，savedAt 不該變成今天）
    *   輸入被清空   ⇒ null（一筆紀錄不可以沒有內容；要拿掉它是「刪除」那顆鈕的事，不是編輯的副作用）
    * 不改傳進來的東西。 */
-  function editRecord(orig, title, input, options, savedAt) {
+  function editRecord(orig, title, input, options, savedAt, source, type) {
     if (!orig || typeof orig !== 'object') return null;
-    var rec = makeRecord(title, input, options, savedAt, orig.id, orig.order);
+    // source／type 沒給（undefined）＝這次不改它，沿用原來的；給了 '' 才是清掉
+    var rec = makeRecord(title, input, options, savedAt, orig.id, orig.order,
+      source === undefined ? orig.source : source, type === undefined ? orig.type : type);
     if (!rec) return null;
     var same = rec.title === orig.title && rec.input === orig.input &&
+      rec.source === normalizeSource(orig.source) && rec.type === normalizeType(orig.type) &&
       JSON.stringify(rec.options) === JSON.stringify(normalizeOptions(orig.options));
     return same ? orig : rec;
   }
@@ -276,6 +309,8 @@
         seq: i + 1,
         part: seen[key],
         title: it.title,
+        type: normalizeType(it.type),
+        source: normalizeSource(it.source),
         options: it.options,
         input: it.input,
         output: null,
@@ -316,6 +351,10 @@
     normalizeOptions: normalizeOptions,
     normalizeDraft: normalizeDraft,
     normalizeTitle: normalizeTitle,
+    normalizeSource: normalizeSource,
+    normalizeType: normalizeType,
+    TYPE_PRESETS: TYPE_PRESETS,
+    typeChoices: typeChoices,
     makeRecord: makeRecord,
     normalizeStore: normalizeStore,
     storeDrift: storeDrift,
