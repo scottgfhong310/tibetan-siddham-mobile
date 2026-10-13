@@ -224,13 +224,13 @@
           </a>
         </div>
       </div>
-      <!-- 類型〔owner 2026-10-13〕：這一筆是什麼（真言／種子字／…）。自由文字＋快選鈕——鈕由控制器的 renderTypeChips 填
-           （預設的兩個＋清單裡用過的），點一顆＝填進上面那一格。行為照標題欄：加入一筆時帶入現在的值。清除鈕不可以包在 label 裡。 -->
+      <!-- 類型〔owner 2026-10-13〕：這一筆是什麼。**可以有好幾個，像 tags**——打字時用「、」或逗號分開。快選鈕由控制器的 renderTypeChips 填
+           （清單裡用過的類型；沒有預設的詞），複選：點一下加上、再點一下拿掉。行為照標題欄：加入一筆時帶入現在的值。清除鈕不可以包在 label 裡。 -->
       <div class="opt-field">
         <label class="opt-label" for="rec-type" data-i18n="rec.typeLabel">類型（可留空；加入時會帶進那一筆）</label>
         <div class="rec-title-row rec-type-row">
           <input type="text" id="rec-type" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false"
-            data-i18n-placeholder="rec.typePlaceholder" placeholder="例如：真言" />
+            data-i18n-placeholder="rec.typePlaceholder" placeholder="例如：真言、種子字" />
           <a href="#!" id="rec-type-clear" class="rec-btn rec-danger" data-i18n-title="rec.clearType" title="清除類型">
             <i class="material-icons">clear</i>
           </a>

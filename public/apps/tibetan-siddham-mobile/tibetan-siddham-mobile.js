@@ -369,7 +369,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     state.recRaw = raw;
     var t = readRaw(REC_TITLE_KEY);
     // 舊格式把標題與清單放在同一格：新的那一格還沒有的時候沿用它
-    return { title: t != null ? Lib.normalizeTitle(t) : st.title, type: Lib.normalizeType(readRaw(REC_TYPE_KEY)),
+    return { title: t != null ? Lib.normalizeTitle(t) : st.title, type: Lib.typesText(readRaw(REC_TYPE_KEY)),
       source: Lib.normalizeSource(readRaw(REC_SOURCE_KEY)), items: st.items };
   }
 
@@ -412,7 +412,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     state.recSourceTimer = setTimeout(saveSource, 300);
   }
 
-  /* 類型欄〔owner 2026-10-13〕：這一筆是什麼（真言／種子字／…）。自由文字＋快選鈕（lib 的 typeChoices）；
+  /* 類型欄〔owner 2026-10-13〕：這一筆是什麼。**可以有好幾個，像 tags**——那一筆的 `type` 是陣列；欄位裡以「、」相連（打字時用「、」或逗號分開），
+   * 快選鈕是複選的（點一下加上、再點一下拿掉；詞由 lib 的 typeChoices 給）。面板上這一格記的是**欄位裡的字**（state.rec.type 是字串）。
    * 行為與存法照標題欄與來源欄——加入時帶入、**自己一格**（REC_TYPE_KEY）、這幾條路上沒有任何一行碰得到清單。 */
   function saveType() {
     clearTimeout(state.recTypeTimer);
@@ -473,7 +474,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     state.rec.items = Lib.addRecord(state.rec.items, rec);
     state.rec.title = rec.title;
     state.rec.source = rec.source;
-    state.rec.type = rec.type;
+    state.rec.type = Lib.typesText(rec.type);
     saveItems();
     saveTitle();
     saveSource();
@@ -521,8 +522,8 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       state.rec.title = it.title;
       $recSource.value = it.source;   // 來源跟著那一筆回來（之後按取代，來源才不會被面板上別的值換掉）
       state.rec.source = it.source;
-      $recType.value = it.type;       // 類型同上
-      state.rec.type = it.type;
+      $recType.value = Lib.typesText(it.type);   // 類型同上（好幾個時以「、」相連）
+      state.rec.type = $recType.value;
       $inputMethod.value = it.options.inputMethod;
       $translit.value = it.options.transliteration;
       $ignoreSpaces.checked = it.options.ignoreSpacesAndHyphens;
@@ -546,7 +547,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       state.rec.items = Lib.replaceRecord(items, i, rec);
       state.rec.title = rec.title;
       state.rec.source = rec.source;
-      state.rec.type = rec.type;
+      state.rec.type = Lib.typesText(rec.type);
       saveItems();
       saveTitle();
       saveSource();
@@ -595,7 +596,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
 
   // 面板上的類型欄換成 v（打字、點快選鈕、清除都走這裡）：只寫類型那一格
   function setPanelType(v, soon) {
-    state.rec.type = Lib.normalizeType(v);
+    state.rec.type = Lib.typesText(v);
     if (soon) { saveTypeSoon(); pushTypeSoon(); } else { saveType(); pushType(); }
     renderTypeChips();
   }
@@ -608,14 +609,14 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     recToast('rec.toast.typeCleared', null, 'grey', 1800);
   }
 
-  // 快選鈕（面板上與編輯表單裡各一排，.rec-chips[data-for=<那一格的 id>]）：詞由 lib 給，亮著的那一顆＝那一格現在的值
+  // 快選鈕（面板上與編輯表單裡各一排，.rec-chips[data-for=<那一格的 id>]）：詞由 lib 給，亮著的那幾顆＝那一格現在有的類型（複選）
   function renderTypeChips() {
     var choices = Lib.typeChoices(state.rec.items);
     $recModal.querySelectorAll('.rec-chips').forEach(function (box) {
-      var cur = Lib.normalizeType(document.getElementById(box.getAttribute('data-for')).value);
+      var cur = Lib.normalizeTypes(document.getElementById(box.getAttribute('data-for')).value);
       box.textContent = '';
       choices.forEach(function (t) {
-        var b = node('button', 'rec-chip' + (t === cur ? ' active' : ''), t);
+        var b = node('button', 'rec-chip' + (cur.indexOf(t) >= 0 ? ' active' : ''), t);
         b.type = 'button';
         b.setAttribute('data-type', t);
         box.appendChild(b);
@@ -705,7 +706,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       head.appendChild(node('span', 'rec-seq', String(r.seq)));
       head.appendChild(node('span', 'rec-name' + (r.title ? '' : ' is-empty'), titleOr(r.title)));
       if (total['t:' + r.title] > 1) head.appendChild(node('span', 'rec-part', I18n.t('rec.part', { p: r.part })));
-      if (r.type) head.appendChild(node('span', 'rec-type', r.type));
+      r.type.forEach(function (t) { head.appendChild(node('span', 'rec-type', t)); });   // 一個類型一顆
       main.appendChild(head);
       // 轉不出來的那一筆把原因寫在原本放藏文的那一行——不留白
       main.appendChild(r.output
@@ -791,7 +792,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
     var box = $recModal.querySelector('.modal-content');
     state.edit = { id: it.id, orig: it, scroll: box.scrollTop };
     $editTitle.value = it.title;
-    $editType.value = it.type;
+    $editType.value = Lib.typesText(it.type);
     $editSource.value = it.source;
     $editInput.value = it.input;
     $editMethod.value = it.options.inputMethod;
@@ -901,7 +902,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
         saveSource();
       },
       onType: function (t) {
-        t = Lib.normalizeType(t);
+        t = Lib.typesText(t);
         rm.typeSent = t;
         if (document.activeElement === $recType || t === state.rec.type) return;   // 正在打的那一欄不搶
         state.rec.type = t;
@@ -1155,7 +1156,7 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
         if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
       });
     });
-    // 快選鈕：點一顆＝填進它那一格。擋 mousedown ⇒ 焦點維持原狀（鍵盤不會跳出來，正在打別格時也不會收起來）
+    // 快選鈕：點一顆＝在它那一格加上（或拿掉）那個類型。擋 mousedown ⇒ 焦點維持原狀（鍵盤不會跳出來，正在打別格時也不會收起來）
     $recModal.addEventListener('mousedown', function (e) {
       if (e.target.closest('.rec-chip')) e.preventDefault();
     });
@@ -1163,8 +1164,10 @@ import { TibetanSiddhamConverter } from "./tibetan-siddham-converter.js";
       var c = e.target.closest('.rec-chip');
       if (!c) return;
       e.preventDefault();
-      var v = c.getAttribute('data-type');
-      if (c.parentNode.getAttribute('data-for') === 'rec-edit-type') { $editType.value = v; renderTypeChips(); }
+      // 複選：點一下加上、再點一下拿掉（那一格現在的字先拆成類型、改完再接回去）
+      var edit = c.parentNode.getAttribute('data-for') === 'rec-edit-type';
+      var v = Lib.typesText(Lib.toggleType((edit ? $editType : $recType).value, c.getAttribute('data-type')));
+      if (edit) { $editType.value = v; renderTypeChips(); }
       else { $recType.value = v; setPanelType(v); }
     });
 

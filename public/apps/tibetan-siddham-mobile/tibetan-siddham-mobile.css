@@ -558,8 +558,8 @@ code {
 /* 面板裡的 label 不走 Materialize 的浮動 label 樣式（它只對 .input-field 底下的生效），字級與顏色照 .opt-label */
 .records-sheet label.opt-label { color: var(--muted); font-size: .85rem; }
 
-/* 類型的快選鈕〔owner 2026-10-13〕：預設的＋清單裡用過的；點一顆＝填進上面那一格（控制器的 renderTypeChips）。
- * 裸 <button> ⇒ Materialize 的 teal 互動底要自己蓋掉（§5.1 gotcha）。亮著的那一顆＝那一格現在的值。 */
+/* 類型的快選鈕〔owner 2026-10-13〕：清單裡用過的類型（沒有預設的詞；還沒有任何類型時這一排是空的，由下面的 :empty 收起來）；複選——點一下加上、再點一下拿掉（控制器的 renderTypeChips）。
+ * 裸 <button> ⇒ Materialize 的 teal 互動底要自己蓋掉（§5.1 gotcha）。亮著的那幾顆＝那一格現在有的類型。 */
 .rec-chips {
   display: flex;
   flex-wrap: wrap;
@@ -749,7 +749,10 @@ code {
   text-overflow: ellipsis;
 }
 
-/* 類型：有類型的那一筆，標題那一行多一顆（比「第 n 段」淡——那一顆是位置，這一顆是分類） */
+/* 類型：有類型的那一筆，標題那一行一個類型一顆（比「第 n 段」淡——那一顆是位置，這幾顆是分類）。
+ * 一筆可以有好幾個 ⇒ 標題那一行放不下時往下折（.rec-head 的 flex-wrap），不擠掉標題。 */
+.rec-head { flex-wrap: wrap; row-gap: 3px; }
+.rec-head .rec-name { max-width: 100%; }
 .rec-head .rec-type {
   flex: none;
   max-width: 8em;

@@ -14,8 +14,9 @@
  *   normalizeOptions(o)        → 三個選項的白名單版本（從 localStorage 讀回來的不可信）
  *   normalizeDraft(d)          → { input, options } —— 草稿同上
  *   normalizeTitle(t)          → 標題的單行版本（**可以是空的、可以重複**）
- *   normalizeType(t)           → 類型的單行版本（**自由文字、可以是空的**）
- *   TYPE_PRESETS／typeChoices(items) → 快選鈕上的詞：預設的（真言、種子字）＋清單裡用過的，不重複
+ *   normalizeTypes(v)          → 類型的陣列（**可以有好幾個、可以是空的**；字串以「、」或逗號拆開，舊的單一字串讀成一個）
+ *   typesText(v)／toggleType(v, t) → 欄位裡顯示的字（以「、」相連）／複選的快選鈕（有就拿掉、沒有就加上）
+ *   typeChoices(items)         → 快選鈕上的詞：清單裡用過的類型（依第一次出現的順序），不重複；**沒有預設的詞**
  *   normalizeSource(s)         → 來源的版本：換行統一成 \n、去頭尾空白（**多行、可以是空的**）
  *   makeRecord(t, i, o, iso, id, order, source, type) → 一筆紀錄 `{ title, type, source, input, options, savedAt, id, order }`；input 是空的回 null
  *   normalizeStore(s)          → { title, items } —— 紀錄清單（從 localStorage 讀回來的不可信）
@@ -30,9 +31,9 @@
  *
  * 資料格式：assist `{ categories: [{ id, carrier?, entries: [{ code, char, label?, note? }] }] }`（tibetan-siddham 的輔助輸入面板那一份）；
  *           草稿 `{ input: string, options: { inputMethod, transliteration, ignoreSpacesAndHyphens } }`；
- *           紀錄清單 `{ items: [{ title, type, source, input, options, savedAt, id, order }] }`（標題欄的值另存一格，見控制器）；
+ *           紀錄清單 `{ items: [{ title, type: [], source, input, options, savedAt, id, order }] }`（標題欄的值另存一格，見控制器）；
  *           `id`＝這一筆的身分（Artifacts 版一筆一份文件，文件名就是它）、`order`＝排序值；兩者都**不進 JSON 輸出**。
- *           JSON 輸出 `{ app, exportedAt, count, records: [{ seq, part, title, type, source, options, input, output, savedAt }] }`，
+ *           JSON 輸出 `{ app, exportedAt, count, records: [{ seq, part, title, type: [], source, options, input, output, savedAt }] }`，
  *           `output` ＝ `{ tibetan, latin, codepoints }`（**沒有悉曇**，見下面 buildExport 的說明）。
  * 後端 API：無（零後端，DATABASE_GUIDELINES §0 的第 0 層）。
  */
@@ -160,23 +161,40 @@
     return typeof t === 'string' ? t.replace(/\s+/g, ' ').trim() : '';
   }
 
-  /* 類型〔owner 2026-10-13〕：這一筆是什麼——「真言／種子字／…」。**自由文字**〔owner 選的；另一案是固定選單〕：
-   * 詞彙由使用的人用出來，不必先定清單、之後加新的類型不必改程式。單行，正規化同標題；空的是合法的（舊紀錄都沒有這一欄）。
-   * 快選鈕上的詞＝預設的 ＋ 清單裡已經用過的（依第一次出現的順序）——打過一次的類型下一次用點的，不必再打，也比較不會打出兩種寫法。
-   * ⚠️ 預設的詞是**資料的值**（會原樣存進紀錄與 JSON），不是介面文案——不跟著語言切換。 */
-  function normalizeType(t) { return normalizeTitle(t); }
-  var TYPE_PRESETS = ['真言', '種子字'];
-  function typeChoices(items) {
+  /* 類型〔owner 2026-10-13〕：這一筆是什麼。**可以有好幾個，像 tags**〔owner 同日：「可以支援多個，類似 Tags」〕⇒ `type` 是字串陣列
+   * （JSON 輸出也是陣列——owner 選的；沒有類型是 []）。**自由文字**〔owner 選的；另一案是固定選單〕：詞彙由使用的人用出來。
+   *   normalizeTypes(v)  陣列或字串都收：字串以「、，,；;」或換行拆開（欄位裡打的字、以及第一版存成單一字串的舊紀錄——'五輪' 讀成 ['五輪']）；
+   *                      每一個單行化（同標題）、丟掉空的、不重複（留第一次出現的）。陣列的元素也照拆 ⇒ 任何一個類型裡都不會有分隔符，
+   *                      typesText() 接起來的字再拆回去一定是同一份。其他型別＝ []。
+   *   typesText(v)       欄位裡顯示的字：以「、」相連
+   *   toggleType(v, t)   複選的快選鈕：有就拿掉、沒有就加在最後（回新陣列）
+   *   typeChoices(items) 快選鈕上的詞＝清單裡用過的類型（依第一次出現的順序），不重複
+   * ⚠️ **沒有預設的詞**〔owner 2026-10-13 拿掉〕：第一版照 owner 舉的例子放了「真言」「種子字」兩顆，而他實際記的 26 筆沒有一筆用到
+   *    （五輪／四大壇城／五路財神／…）——每次都看得到、從來不按的鈕只是佔位置。清單裡還沒有任何類型時，那一排就是空的（CSS 把空的那一排收起來）。 */
+  var TYPE_SEP = /[、，,；;\n]+/;
+  function normalizeTypes(v) {
+    var parts = [];
+    if (typeof v === 'string') parts = v.split(TYPE_SEP);
+    else if (Array.isArray(v)) v.forEach(function (x) { if (typeof x === 'string') parts = parts.concat(x.split(TYPE_SEP)); });
     var seen = {}, out = [];
-    function add(t) {
-      t = normalizeType(t);
+    parts.forEach(function (x) {
+      var t = normalizeTitle(x);
       if (!t || seen['t:' + t]) return;
       seen['t:' + t] = true;
       out.push(t);
-    }
-    TYPE_PRESETS.forEach(add);
-    (Array.isArray(items) ? items : []).forEach(function (it) { if (it) add(it.type); });
+    });
     return out;
+  }
+  function typesText(v) { return normalizeTypes(v).join('、'); }
+  function toggleType(v, t) {
+    var list = normalizeTypes(v), one = normalizeTypes(t)[0];
+    if (!one) return list;
+    return list.indexOf(one) >= 0 ? list.filter(function (x) { return x !== one; }) : list.concat([one]);
+  }
+  function typeChoices(items) {
+    var all = [];
+    (Array.isArray(items) ? items : []).forEach(function (it) { if (it) all = all.concat(normalizeTypes(it.type)); });
+    return normalizeTypes(all);
   }
 
   /* 來源〔owner 2026-10-13〕：這一筆資料出自哪裡（經號、頁碼、網址…），多行的自由文字。
@@ -193,7 +211,7 @@
     if (typeof input !== 'string' || !input.trim()) return null;
     return {
       title: normalizeTitle(title),
-      type: normalizeType(type),
+      type: normalizeTypes(type),
       source: normalizeSource(source),
       input: input,
       options: normalizeOptions(options),
@@ -289,7 +307,7 @@
       source === undefined ? orig.source : source, type === undefined ? orig.type : type);
     if (!rec) return null;
     var same = rec.title === orig.title && rec.input === orig.input &&
-      rec.source === normalizeSource(orig.source) && rec.type === normalizeType(orig.type) &&
+      rec.source === normalizeSource(orig.source) && JSON.stringify(rec.type) === JSON.stringify(normalizeTypes(orig.type)) &&
       JSON.stringify(rec.options) === JSON.stringify(normalizeOptions(orig.options));
     return same ? orig : rec;
   }
@@ -309,7 +327,7 @@
         seq: i + 1,
         part: seen[key],
         title: it.title,
-        type: normalizeType(it.type),
+        type: normalizeTypes(it.type),
         source: normalizeSource(it.source),
         options: it.options,
         input: it.input,
@@ -352,8 +370,9 @@
     normalizeDraft: normalizeDraft,
     normalizeTitle: normalizeTitle,
     normalizeSource: normalizeSource,
-    normalizeType: normalizeType,
-    TYPE_PRESETS: TYPE_PRESETS,
+    normalizeTypes: normalizeTypes,
+    typesText: typesText,
+    toggleType: toggleType,
     typeChoices: typeChoices,
     makeRecord: makeRecord,
     normalizeStore: normalizeStore,

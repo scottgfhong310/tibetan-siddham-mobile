@@ -6,10 +6,10 @@
  * ⇒ 清單改存 artifact 的資料庫（`db` capability）：撐得過重開、republish 與換裝置，Claude 也讀得到（發佈前先備份）。
  *
  * 資料形狀（發佈時宣告 `capabilities: { downloads: true, db: { rules: [{ path: "", read: "owner", write: "owner" }] } }`）：
- *   records/<id>   { title, type, source, input, options, savedAt, order }   —— **一筆一份文件**，文件名＝那一筆的 id（`type`＝類型、`source`＝來源，2026-10-13 起；舊文件沒有這兩欄＝空的）
+ *   records/<id>   { title, type, source, input, options, savedAt, order }   —— **一筆一份文件**，文件名＝那一筆的 id（`type`＝類型，**字串陣列**（第一版是單一字串，讀進來當成一個）；`source`＝來源；2026-10-13 起，舊文件沒有這兩欄＝空的）
  *   state/title    { value }                                   —— 標題欄現在的值
  *   state/source   { value }                                   —— 來源欄現在的值（加入一筆時帶進那一筆的 `source`）
- *   state/type     { value }                                   —— 類型欄現在的值（同上，帶進 `type`）
+ *   state/type     { value }                                   —— 類型欄現在的值（**欄位裡的字**，好幾個時以「、」相連；加入時拆成陣列帶進 `type`）
  * ⚠️ **沒有「整份清單」那種文件**：整份寫回去就是 家族 CHANGELOG v2.181 弄丟紀錄的那個做法。加入／取代只 set 自己那一份、刪除只 delete 自己那一份。
  * ⚠️ 同一份文件一次只寫一筆（平台的規矩：前一次還沒回來又寫，會越寫越慢）⇒ 每份文件各排一條隊。
  *
@@ -68,7 +68,7 @@
     var path = COL + '/' + rec.id;
     return queued(path, function () {
       return db.collection(COL).doc(rec.id).set({
-        title: rec.title, type: rec.type || '', source: rec.source || '', input: rec.input, options: rec.options, savedAt: rec.savedAt, order: rec.order
+        title: rec.title, type: rec.type || [], source: rec.source || '', input: rec.input, options: rec.options, savedAt: rec.savedAt, order: rec.order
       });
     });
   }
