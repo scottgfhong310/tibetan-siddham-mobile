@@ -13,7 +13,7 @@
 ```bash
 npm install && npm start                 # → http://localhost:3000/apps/tibetan-siddham-mobile/
 npm run verify                           # 40 條契約檢查
-node scripts/verify.js --selftest        # 218 個反向注入，全部必須被抓到
+node scripts/verify.js --selftest        # 219 個反向注入，全部必須被抓到
 python3 artifact/build.py                # Artifacts 版 → artifact/dist/ ＋ artifact/dist.files.json（都不進版控）
 ```
 
@@ -61,7 +61,8 @@ public/apps/tibetan-siddham-mobile/
 14. **不要用 `confirm()`／`alert()`**：Artifacts 的 iframe 裡直接回 false。會毀掉東西的動作一律「再按一次」（第 ㉛ 條）。
 15. **`downloadText()` 的函式本體是 `artifact/build.py` 的補丁錨點**——改它，那邊的 `DOWNLOAD_OLD` 要一起改（沒改會建置失敗，不會安靜地漏掉）。
 16. **編輯某一筆（清單上的 ✎）在面板裡做，不經過主畫面**〔owner 2026-10-13〕：`startEdit`／`saveEdit` 不可以碰輸入框、標題欄、畫面上的選項；
-    存回認 `id` 不認序號；編輯中唯一的出口是 儲存／取消（點面板外不關、「完成」收起來）；沒有更動不寫入、記法清空不給存。第 ㊲ 條（DESIGN §8、bm §10.5）。
+    存回認 `id` 不認序號；編輯中唯一的出口是 儲存／取消（點面板外不關、「完成」收起來）；沒有更動不寫入、記法清空不給存。
+    表單由上到下是 標題 → 類型 → **轉換結果 → 記法** → 出處參考 → 選項〔owner 2026-10-13：「將記法的位置移到轉換結果的下方」；與主畫面同一個方向——輸出在上、輸入在下〕，不要對調回去。第 ㊲ 條（DESIGN §8、bm §10.5）。
 17. **每一筆有 `type`（類型——**字串陣列，可以有好幾個，像 tags**；第一版是單一字串，讀進來當成一個，**不要寫遷移**）與 `source`（來源，多行；⚠️ **畫面上的標籤是「出處參考」**，欄位名、key、id 仍是 source——不要為了對齊去改名）兩欄，都可以是空的**〔owner 2026-10-13〕：面板上標題欄底下那兩格的值在加入時帶入；編輯表單裡可各自改。
     類型是**自由文字＋複選的快選鈕**（快選鈕只有清單裡用過的類型；**沒有預設的詞——owner 拿掉了，不要加回來**）——不要改成固定選單；欄位裡以「、」相連，把陣列塞進欄位要過 `typesText()`；編輯表單裡那一排快選鈕只動表單那一格。
     ⚠️ 新增一個紀錄欄位要動**四個地方**，漏一個都不會報錯：lib 的 `makeRecord`（白名單）、`buildExport`、`artifact/src/remote-db.js` 的寫入與讀回各一處、

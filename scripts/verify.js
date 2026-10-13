@@ -896,6 +896,9 @@ check('㊲ 編輯某一筆：只改那一筆、認 id、出口只有儲存／取
   if (!(head.indexOf('data-edit="save"') > 0 && head.indexOf('data-edit="cancel"') > 0)) miss.push('儲存／取消不在表單第一列');
   const foot = sheet.slice(sheet.indexOf('class="modal-footer"'));
   if (!(/class="btn-flat rec-edit-only"[^>]*data-edit="cancel"/.test(foot) && /class="btn-flat rec-edit-only rec-edit-ok"[^>]*data-edit="save"/.test(foot))) miss.push('底列沒有編輯用的 取消／儲存');
+  // 轉換結果在上、記法在它下面、出處參考再下面〔owner 2026-10-13：「將記法的位置移到轉換結果的下方」〕
+  const po = sheet.indexOf('id="rec-edit-out"'), pi = sheet.indexOf('id="rec-edit-input"'), ps = sheet.indexOf('id="rec-edit-source"');
+  if (!(po > 0 && po < pi && pi < ps)) miss.push('記法不在轉換結果的下方');
   const ta = (sheet.match(/<textarea id="rec-edit-input"[^>]*>/) || [''])[0];
   const lack = ['autocapitalize="off"', 'autocorrect="off"', 'spellcheck="false"'].filter((a) => ta.indexOf(a) < 0);
   if (lack.length) miss.push('記法欄少了 ' + lack.join(' '));
@@ -1255,6 +1258,7 @@ const MUTANTS = [
   ['㊲', '編輯中「完成」仍看得到', (w) => { w.css = w.css.replace(".records-sheet.is-editing .modal-footer > :not(.rec-edit-only) { display: none; }\n", ""); }],
   ['㊲', '表單排到 JSON 的位置（面板底部）', (w) => { w.html = w.html.replace('id="rec-edit"', 'id="__e__"').replace('id="rec-json"', 'id="rec-edit"').replace('id="__e__"', 'id="rec-json"'); }],
   ['㊲', '儲存／取消只剩底列那一對', (w) => { w.html = w.html.replace(/          <span class="rec-edit-acts">[\s\S]*?<\/span>\n/, ''); }],
+  ['㊲', '記法排回轉換結果上面', (w) => { const a = w.html.match(/        <div class="opt-field">\n          <label class="opt-label" for="rec-edit-input"[\s\S]*?<\/div>\n/)[0]; w.html = w.html.replace(a, '').replace('        <div class="opt-field">\n          <span class="opt-label" data-i18n="rec.editPreview">', a + '        <div class="opt-field">\n          <span class="opt-label" data-i18n="rec.editPreview">'); }],
   ['㊲', '記法欄開著自動校正', (w) => { w.html = w.html.replace(/(<textarea id="rec-edit-input"[^>]*?)autocorrect="off" /, '$1'); }],
   ['㊲', '記法欄字級寫死 16px', (w) => { w.css = w.css.replace(/(textarea\.rec-edit-input\s*\{[^}]*font-size:\s*)var\(--ctl-font\)/, '$116px'); }],
   ['㊲', '清單上沒有編輯鈕', (w) => { w.js = w.js.replace("      li.appendChild(recButton('edit', i, 'edit', 'rec.edit', false));\n", ''); }],

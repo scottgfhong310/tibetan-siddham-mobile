@@ -176,15 +176,16 @@
           <input type="text" id="rec-edit-type" class="rec-title" autocomplete="off" autocorrect="off" spellcheck="false" />
           <div class="rec-chips" data-for="rec-edit-type"></div>
         </div>
-        <div class="opt-field">
-          <label class="opt-label" for="rec-edit-input" data-i18n="rec.editInput">記法</label>
-          <textarea id="rec-edit-input" class="rec-edit-input mono" rows="2"
-            autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
-        </div>
+        <!-- 轉換結果在上、記法在下〔owner 2026-10-13：「將記法的位置移到轉換結果的下方」〕——與主畫面同一個方向（輸出在上、輸入在下）。 -->
         <div class="opt-field">
           <span class="opt-label" data-i18n="rec.editPreview">轉換結果</span>
           <div id="rec-edit-out" class="rec-edit-out" aria-live="polite"></div>
           <div id="rec-edit-latin" class="rec-edit-latin"></div>
+        </div>
+        <div class="opt-field">
+          <label class="opt-label" for="rec-edit-input" data-i18n="rec.editInput">記法</label>
+          <textarea id="rec-edit-input" class="rec-edit-input mono" rows="2"
+            autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
         </div>
         <div class="opt-field">
           <label class="opt-label" for="rec-edit-source" data-i18n="rec.editSource">出處參考</label>
