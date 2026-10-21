@@ -21,34 +21,23 @@ cons	kh	ཁ	kha
 cons	g	ག	ga
 cons	gh	གྷ	gha
 cons	ng	ང	ṅa
-cons	c	ྩ	subjoined TSA (user mapping: c -> 0FA9)
-cons	ch	ྪ	subjoined TSHA (user mapping: ch -> 0FAA)
-cons	j	ྫ	subjoined DZA (user mapping: j -> 0FAB)
-cons	jh	ྫྷ	subjoined DZHA (user mapping: jh -> 0FAC)
-# --- user mapping overrides (v2026-02-05.1) ---
-cons	ca	ཙ	TSA (user mapping: ca -> 0F59)
-cons	cha	ཚ	TSHA (user mapping: cha -> 0F5A)
-cons	ja	ཛ	DZA (user mapping: ja -> 0F5B)
-cons	jha	ཛྷ	DZHA (user mapping: jha -> 0F5C)
-cons	;na	ང	NGA (user mapping: ;na -> 0F44)
-cons	;n	ྔ	subjoined NGA (user mapping: ;n -> 0F94)
-cons	~na	ཉ	NYA (user mapping: ~na -> 0F49)
-cons	~n	ྙ	subjoined NYA (user mapping: ~n -> 0F99)
-cons	.ta	ཊ	TTA (retroflex) (user mapping: .ta -> 0F4A)
-cons	.t	ྚ	subjoined TTA (user mapping: .t -> 0F9A)
-cons	.tha	ཋ	TTHA (retroflex) (user mapping: .tha -> 0F4B)
-cons	.th	ྛ	subjoined TTHA (user mapping: .th -> 0F9B)
-cons	.da	ཌ	DDA (retroflex) (user mapping: .da -> 0F4C)
-cons	.d	ྜ	subjoined DDA (user mapping: .d -> 0F9C)
-cons	.dha	ཌྷ	DDHA (retroflex) (user mapping: .dha -> 0F4D)
-cons	.dh	ྜྷ	subjoined DDHA (user mapping: .dh -> 0F9D)
-cons	.na	ཎ	NNA (retroflex) (user mapping: .na -> 0F4E)
-cons	.n	ྞ	subjoined NNA (user mapping: .n -> 0F9E)
-cons	;sa	ཤ	SHA (user mapping: ;sa -> 0F64)
-cons	;s	ྴ	subjoined SHA (user mapping: ;s -> 0FB4)
-cons	.sa	ཥ	SHA (user mapping: .sa -> 0F65)
-cons	.s	ྵ	subjoined SHA (user mapping: .s -> 0FB5)
-# --- end user mapping overrides ---
+# --- 2026-10-22：以下 13 個子音與 k／g／t… 同一個規則——單獨的記號＝基字，第二個以後由 tibetan-core 轉成下加字。
+#     原本另有 ca／ja／;na… 帶 a 的整串（＝基字）與單獨記號（＝下加字）兩套：longest-match 會讓 ja 吃掉 aa／ai／au 的第一個 a
+#     （jaa → ཛ、jai → ཛི），沒有 a 可接時又輸出沒有基字的下加字（jrii → ྫྲཱི）。不要加回帶 a 的整串。
+cons	c	ཙ	tsa (0F59)
+cons	ch	ཚ	tsha (0F5A)
+cons	j	ཛ	dza (0F5B)
+cons	jh	ཛྷ	dzha (0F5C)
+cons	;n	ང	ṅa (0F44)
+cons	~n	ཉ	ña (0F49)
+cons	.t	ཊ	ṭa retroflex (0F4A)
+cons	.th	ཋ	ṭha retroflex (0F4B)
+cons	.d	ཌ	ḍa retroflex (0F4C)
+cons	.dh	ཌྷ	ḍha retroflex (0F4D)
+cons	.n	ཎ	ṇa retroflex (0F4E)
+cons	;s	ཤ	śa (0F64)
+cons	.s	ཥ	ṣa (0F65)
+# --- end
 cons	ny	ཉ	ña
 cons	T	ཊ	ṭa (retroflex)
 cons	Th	ཋ	ṭha (retroflex)
