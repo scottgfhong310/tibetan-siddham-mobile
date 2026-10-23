@@ -142,19 +142,25 @@ export class TibetanSiddhamConverter {
         //   切段再轉（而不是轉完再換）是因為兩個引擎都把空格吃掉或改寫了，轉完就認不出原本是幾個；
         //   各段獨立也讓它自然成為邊界（n␣␣␣a 的悉曇是 n＋virama、a 是獨立母音）。
         //   藏文：全形空格後面不接 tsheg（同「標點後不接 tsheg」）。拉丁：不動（照舊收斂成一個空格）。
+        //
+        // 空白兩側的 ~ 不併起來〔owner 2026-10-23，DESIGN §14〕：「忽略空格」開時藏文核心把單一空格吃掉，
+        //   `~ ~` 會接成 `~~` 而被換成 ༄。⇒ 塊尾的 ~ 後面先墊一個私用區記號 TILDE_STOP（藏文核心原樣留著它），
+        //   ~ 換完再拿掉——`~ ~` 是 𑗁𑗁、`~ ~~` 是 𑗁༄；同一塊裡的 `~~~` 照舊是 ༄𑗁。只動藏文，悉曇與拉丁本來就丟掉 ~。
         const SID_BAR = "\u{115C5}"        // 來自 |
         const SID_DBL = "\u{115C9}"        // 來自 ||
         const SIDDHAM_SIGN = "\u{115C1}"   // 𑗁（~ 對應）
         const YIG_MGO = "༄"           // ༄（~~ 對應）
         const WIDE_SPACE = "\u3000"       // 全形空格（三個半形空格對應）
+        const TILDE_STOP = "\uE000"       // 墊在塊尾的 ~ 後面，擋住它與下一塊的 ~ 接起來（換完 ~ 就拿掉）
         const pieces = ascii.split("   ")
 
         const tibetan = TibetanSiddhamConverter.restoreSymbols(
-            pieces.map(piece => ascii2tibetan(piece, { ignoreSpacesAndHyphens })).join(WIDE_SPACE), SIDDHAM_SIGN)
+            pieces.map(piece => ascii2tibetan(piece.replace(/~(?=\s)/g, "~" + TILDE_STOP), { ignoreSpacesAndHyphens })).join(WIDE_SPACE), SIDDHAM_SIGN)
             .split(SID_DBL).join("༎")
             .split(SID_BAR).join("།")
             .split("~~").join(YIG_MGO)        // ~~ → ༄（先處理雙）
             .split("~").join(SIDDHAM_SIGN)    // ~  → 𑗁
+            .split(TILDE_STOP).join("")       // 擋完了（要在下一行之前：標點後的 tsheg 要貼著標點才認得）
             .replace(/([།༎༄\u{115C1}])་/gu, "$1 ")   // 標點後的 tsheg → 一個空格
             .replace(/\u3000་+/g, WIDE_SPACE)        // 全形空格後的 tsheg → 不輸出
         const siddham = pieces.map(piece => ascii2siddham(piece, { ignoreSpacesAndHyphens })).join(WIDE_SPACE)
